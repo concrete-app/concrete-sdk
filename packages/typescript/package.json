@@ -1,0 +1,18 @@
+{
+  "name": "concrete-sdk",
+  "version": "0.0.1",
+  "description": "Placeholder package to reserve the name concrete-sdk",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/placeholder/concrete-sdk.git"
+  },
+  "keywords": [
+    "concrete",
+    "sdk",
+    "api"
+  ],
+  "author": "Marco Furrer",
+  "license": "MIT"
+}

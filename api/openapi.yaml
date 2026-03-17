@@ -1,0 +1,99 @@
+openapi: 3.1.0
+info:
+  title: Concrete API
+  description: The single source of truth for the Concrete SDK
+  version: 0.0.1
+servers:
+  - url: https://api.concrete.example.com/v1
+
+paths:
+  /health:
+    get:
+      summary: Health Check
+      operationId: getHealth
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthStatus'
+  /upload:
+    post:
+      summary: Upload a file
+      operationId: uploadFile
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                file:
+                  type: string
+                  format: binary
+                  description: The file to upload (PDF, TXT, DOCX, etc.)
+                metadata:
+                  type: string
+                  description: Optional JSON metadata associated with the file
+      responses:
+        '200':
+          description: File successfully uploaded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadResponse'
+  /vectors/update:
+    post:
+      summary: Start vector update
+      operationId: startVectorUpdate
+      requestBody:
+        description: Target files or criteria for vectorization
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VectorUpdateRequest'
+      responses:
+        '200':
+          description: Vector update started successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VectorUpdateResponse'
+
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+          example: "up"
+        version:
+          type: string
+          example: "1.0.0"
+    UploadResponse:
+      type: object
+      properties:
+        file_id:
+          type: string
+        filename:
+          type: string
+        url:
+          type: string
+    VectorUpdateRequest:
+      type: object
+      properties:
+        file_ids:
+          type: array
+          items:
+            type: string
+          description: List of file IDs to vectorize. If empty, processes all pending files.
+    VectorUpdateResponse:
+      type: object
+      properties:
+        job_id:
+          type: string
+        status:
+          type: string
+          example: "processing"

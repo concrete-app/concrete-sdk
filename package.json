@@ -1,0 +1,10 @@
+{
+  "name": "concrete-sdk-monorepo",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "generate": "echo 'Setup Fern/OpenAPI generation here'"
+  }
+}
