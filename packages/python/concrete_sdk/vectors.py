@@ -6,12 +6,8 @@ class VectorsClient:
         self.base_url = base_url
         self.session = session
 
-    def start_vector_update(self, file_ids: Optional[List[str]] = None) -> dict:
-        url = f"{self.base_url}/vectors/update"
-        payload = {}
-        if file_ids is not None:
-            payload['file_ids'] = file_ids
-
-        response = self.session.post(url, json=payload)
+    def start_vector_update(self) -> dict:
+        url = f"{self.base_url}/start_vector_update"
+        response = self.session.post(url)
         response.raise_for_status()
         return response.json()

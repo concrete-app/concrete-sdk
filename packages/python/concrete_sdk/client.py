@@ -9,12 +9,12 @@ from .vectors import VectorsClient
 class ConcreteClient:
     def __init__(
         self, 
-        base_url: str, 
         api_key: Optional[str] = None, 
+        base_url: Optional[str] = None, 
         langgraph_url: Optional[str] = None
     ):
-        self.base_url = base_url.rstrip("/")
         self.api_key = api_key or os.getenv("CONCRETE_API_KEY")
+        self.base_url = (base_url or os.getenv("CONCRETE_BASE_URL", "https://europe-west6-planerhub-d731e.cloudfunctions.net")).rstrip("/")
 
         self.session = requests.Session()
         if self.api_key:

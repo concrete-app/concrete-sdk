@@ -43,16 +43,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UploadResponse'
-  /vectors/update:
+  /start_vector_update:
     post:
       summary: Start vector update
       operationId: startVectorUpdate
-      requestBody:
-        description: Target files or criteria for vectorization
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/VectorUpdateRequest'
       responses:
         '200':
           description: Vector update started successfully
@@ -81,19 +75,10 @@ components:
           type: string
         url:
           type: string
-    VectorUpdateRequest:
-      type: object
-      properties:
-        file_ids:
-          type: array
-          items:
-            type: string
-          description: List of file IDs to vectorize. If empty, processes all pending files.
     VectorUpdateResponse:
       type: object
       properties:
-        job_id:
+        success:
+          type: boolean
+        message:
           type: string
-        status:
-          type: string
-          example: "processing"
