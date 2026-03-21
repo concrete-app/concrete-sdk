@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: concrete-sdk
-Version: 0.0.1
+Version: 0.0.2
 Summary: Placeholder package to reserve the name concrete-sdk
 Author-email: Marco Furrer <placeholder@example.com>
 Classifier: Programming Language :: Python :: 3
@@ -10,6 +10,7 @@ Requires-Python: >=3.7
 Description-Content-Type: text/markdown
 Requires-Dist: requests>=2.25.0
 Requires-Dist: langgraph-sdk>=0.1.0
+Requires-Dist: typing-extensions>=4.0.0
 
 # concrete-sdk
 
