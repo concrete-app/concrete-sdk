@@ -57,74 +57,54 @@ paths:
 
 components:
   schemas:
+    ProductId:
+      type: string
+      enum:
+        - prod_UBhelBG3P9qpj5
+        - prod_UGc67PC09uMYuh
+        - prod_UGbRoO3FIGzPEl
+        - prod_UGbRxts1OXtMJR
+        - prod_UGbydQqsDQRq9o
+        - prod_UGbzEwRzrMBkMq
+        - prod_UGc0o1j6kjrMBR
+        - prod_TSYpaQ8bCYpBJH
+      x-enum-varnames:
+        - DEVELOPER
+        - PROJECTROOM
+        - CHATINTEGRATION_STARTER
+        - CHATINTEGRATION_PROFESSIONAL
+        - ADD_ON_200GB
+        - ADD_ON_500GB
+        - ADD_ON_1TB
+        - CHAT_AGENT
+
     Product:
       type: object
       required:
         - id
       properties:
         id:
-          type: string
-    
+          $ref: '#/components/schemas/ProductId'
+
     ProductConfig:
       type: object
       properties:
         developer:
-          allOf:
-            - $ref: '#/components/schemas/Product'
-            - type: object
-              properties:
-                id:
-                  enum: ["prod_UBhelBG3P9qpj5"]
-
+          $ref: '#/components/schemas/Product'
         projectroom:
-          allOf:
-            - $ref: '#/components/schemas/Product'
-            - type: object
-              properties:
-                id:
-                  enum: ["prod_UGc67PC09uMYuh"]
+          $ref: '#/components/schemas/Product'
         chatintegration-starter:
-          allOf:
-            - $ref: '#/components/schemas/Product'
-            - type: object
-              properties:
-                id:
-                  enum: ["prod_UGbRoO3FIGzPEl"]
+          $ref: '#/components/schemas/Product'
         chatintegration-professional:
-          allOf:
-            - $ref: '#/components/schemas/Product'
-            - type: object
-              properties:
-                id:
-                  enum: ["prod_UGbRxts1OXtMJR"]
+          $ref: '#/components/schemas/Product'
         add-on-200gb:
-          allOf:
-            - $ref: '#/components/schemas/Product'
-            - type: object
-              properties:
-                id:
-                  enum: ["prod_UGbydQqsDQRq9o"]
+          $ref: '#/components/schemas/Product'
         add-on-500gb:
-          allOf:
-            - $ref: '#/components/schemas/Product'
-            - type: object
-              properties:
-                id:
-                  enum: ["prod_UGbzEwRzrMBkMq"]
+          $ref: '#/components/schemas/Product'
         add-on-1tb:
-          allOf:
-            - $ref: '#/components/schemas/Product'
-            - type: object
-              properties:
-                id:
-                  enum: ["prod_UGc0o1j6kjrMBR"]
+          $ref: '#/components/schemas/Product'
         chat-agent:
-          allOf:
-            - $ref: '#/components/schemas/Product'
-            - type: object
-              properties:
-                id:
-                  enum: ["prod_TSYpaQ8bCYpBJH"]
+          $ref: '#/components/schemas/Product'
                   
         
 
