@@ -57,6 +57,79 @@ paths:
 
 components:
   schemas:
+    Product:
+      type: object
+      required:
+        - id
+      properties:
+        id:
+          type: string
+    
+    ProductConfig:
+      type: object
+      properties:
+        developer:
+          allOf:
+            - $ref: '#/components/schemas/Product'
+            - type: object
+              properties:
+                id:
+                  enum: ["prod_UBhelBG3P9qpj5"]
+
+        projectroom:
+          allOf:
+            - $ref: '#/components/schemas/Product'
+            - type: object
+              properties:
+                id:
+                  enum: ["prod_UGc67PC09uMYuh"]
+        chatintegration-starter:
+          allOf:
+            - $ref: '#/components/schemas/Product'
+            - type: object
+              properties:
+                id:
+                  enum: ["prod_UGbRoO3FIGzPEl"]
+        chatintegration-professional:
+          allOf:
+            - $ref: '#/components/schemas/Product'
+            - type: object
+              properties:
+                id:
+                  enum: ["prod_UGbRxts1OXtMJR"]
+        add-on-200gb:
+          allOf:
+            - $ref: '#/components/schemas/Product'
+            - type: object
+              properties:
+                id:
+                  enum: ["prod_UGbydQqsDQRq9o"]
+        add-on-500gb:
+          allOf:
+            - $ref: '#/components/schemas/Product'
+            - type: object
+              properties:
+                id:
+                  enum: ["prod_UGbzEwRzrMBkMq"]
+        add-on-1tb:
+          allOf:
+            - $ref: '#/components/schemas/Product'
+            - type: object
+              properties:
+                id:
+                  enum: ["prod_UGc0o1j6kjrMBR"]
+        chat-agent:
+          allOf:
+            - $ref: '#/components/schemas/Product'
+            - type: object
+              properties:
+                id:
+                  enum: ["prod_TSYpaQ8bCYpBJH"]
+                  
+        
+
+
+
     HealthStatus:
       type: object
       properties:
