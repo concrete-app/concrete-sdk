@@ -4,10 +4,12 @@ info:
   description: The single source of truth for the Concrete SDK
   version: 0.0.1
 servers:
-  - url: https://api.concrete.example.com/v1
+  - url: https://kb-upload-w2uumyfi7a-oa.a.run.app
 
 paths:
   /health:
+    servers:
+      - url: https://kb-upload-w2uumyfi7a-oa.a.run.app
     get:
       summary: Health Check
       operationId: getHealth
@@ -19,6 +21,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/HealthStatus'
   /upload:
+    servers:
+      - url: https://kb-upload-w2uumyfi7a-oa.a.run.app
     post:
       summary: Upload a file
       operationId: uploadFile
@@ -44,6 +48,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/UploadResponse'
   /start_vector_update:
+    servers:
+      - url: https://vectorize-user-kb-api-w2uumyfi7a-oa.a.run.app
     post:
       summary: Start vector update
       operationId: startVectorUpdate
