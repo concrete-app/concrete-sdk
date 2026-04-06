@@ -74,6 +74,7 @@ components:
         - prod_UGbzEwRzrMBkMq
         - prod_UGc0o1j6kjrMBR
         - prod_TSYpaQ8bCYpBJH
+        - prod_U6SOp9rhsrqlyd
       x-enum-varnames:
         - DEVELOPER
         - PROJECTROOM
@@ -83,6 +84,7 @@ components:
         - ADD_ON_500GB
         - ADD_ON_1TB
         - CHAT_AGENT
+        - KNOWLEDGE_BASE_PROJECT
 
     Product:
       type: object

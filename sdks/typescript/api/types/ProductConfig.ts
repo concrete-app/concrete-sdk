@@ -9,6 +9,7 @@ export interface ProductConfig {
     "add-on-500gb"?: ProductConfig.AddOn500Gb | undefined;
     "add-on-1tb"?: ProductConfig.AddOn1Tb | undefined;
     "chat-agent"?: ProductConfig.ChatAgent | undefined;
+    "knowledge-base-project"?: ProductConfig.KnowledgeBaseProject | undefined;
 }
 
 export namespace ProductConfig {
@@ -96,6 +97,17 @@ export namespace ProductConfig {
     export namespace ChatAgent {
         export const Id = {
             ProdTsYpaQ8BCYpBjh: "prod_TSYpaQ8bCYpBJH",
+        } as const;
+        export type Id = (typeof Id)[keyof typeof Id];
+    }
+
+    export interface KnowledgeBaseProject {
+        id?: KnowledgeBaseProject.Id | undefined;
+    }
+
+    export namespace KnowledgeBaseProject {
+        export const Id = {
+            ProdU6SOp9Rhsrqlyd: "prod_U6SOp9rhsrqlyd",
         } as const;
         export type Id = (typeof Id)[keyof typeof Id];
     }
