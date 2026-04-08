@@ -63,28 +63,127 @@ paths:
 
 components:
   schemas:
-    ProductId:
-      type: string
-      enum:
-        - prod_UBhelBG3P9qpj5
-        - prod_UGc67PC09uMYuh
-        - prod_UGbRoO3FIGzPEl
-        - prod_UGbRxts1OXtMJR
-        - prod_UGbydQqsDQRq9o
-        - prod_UGbzEwRzrMBkMq
-        - prod_UGc0o1j6kjrMBR
-        - prod_TSYpaQ8bCYpBJH
-        - prod_U6SOp9rhsrqlyd
-      x-enum-varnames:
-        - DEVELOPER
-        - PROJECTROOM
-        - CHATINTEGRATION_STARTER
-        - CHATINTEGRATION_PROFESSIONAL
-        - ADD_ON_200GB
-        - ADD_ON_500GB
-        - ADD_ON_1TB
-        - CHAT_AGENT
-        - KNOWLEDGE_BASE_PROJECT
+    Prices:
+      type: object
+      properties:
+        beta:
+          type: string
+          enum:
+            - price_1TJvbXE2PhgH7BCtUmsdORBX
+            - price_1TJvYlE2PhgH7BCtZEs9qEKn
+            - price_1TJvbJE2PhgH7BCtgrFk6Jnv
+            - price_1TJvaxE2PhgH7BCtzt2ZIR4n
+            - price_1TJvaPE2PhgH7BCtCJlEPwMQ
+            - price_1TJvZsE2PhgH7BCth7NGdvSX
+            - price_1TJvZRE2PhgH7BCtGMDiF43e
+            - price_1TJvccE2PhgH7BCtwkEn8m6x
+            - price_1TJvbuE2PhgH7BCtORwUFzCi
+
+          x-enum-varname:
+            - DEVELOPER
+            - PROJECTROOM
+            - CHATINTEGRATION_STARTER
+            - CHATINTEGRATION_PROFESSIONAL
+            - ADD_ON_200GB
+            - ADD_ON_500GB
+            - ADD_ON_1TB
+            - CHAT_AGENT
+            - KNOWLEDGE_BASE_PROJECT
+        prod:
+          type: string
+          enum:
+            - price_1TDKEsCjm4ij4OwQxrx6Mhxw
+            - price_1TI4sICjm4ij4OwQTyAejxsY
+            - price_1TI4EACjm4ij4OwQZD6BETcr
+            - price_1TI4EzCjm4ij4OwQvrLAggXc
+            - price_1TI4krCjm4ij4OwQ9Ni6W9Wp
+            - price_1TI4laCjm4ij4OwQAlhNEjlW
+            - price_1TI4m5Cjm4ij4OwQL7mDF5ft
+            - price_1SVdi0Cjm4ij4OwQwDaVRuQc
+            - price_1T8FTmCjm4ij4OwQy5g9Yyl7
+          x-enum-varnames:
+            - DEVELOPER
+            - PROJECTROOM
+            - CHATINTEGRATION_STARTER
+            - CHATINTEGRATION_PROFESSIONAL
+            - ADD_ON_200GB
+            - ADD_ON_500GB
+            - ADD_ON_1TB
+            - CHAT_AGENT
+            - KNOWLEDGE_BASE_PROJECT
+    Coupons:
+      type: object
+      properties:
+        beta:
+          type: string
+          enum:
+            - 8OtmmkeX
+            - MrflZW53
+            - adiENO5W
+          x-enum-varname:
+            - NEWCOPYSTORE
+            - PROJECTROOM
+            - TESTER_12_MONTHS
+        prod:
+          type: string
+          enum:
+            - 8OtmmkeX
+            - MrflZW53
+            - adiENO5W
+          x-enum-varnames:
+            - NEWCOPYSTORE
+            - PROJECTROOM
+            - TESTER_12_MONTHS
+
+    Products:
+      type: object
+      properties:
+        prod:
+          type: string
+          enum:
+            - prod_UBhelBG3P9qpj5
+            - prod_UGc67PC09uMYuh
+            - prod_UGbRoO3FIGzPEl
+            - prod_UGbRxts1OXtMJR
+            - prod_UGbydQqsDQRq9o
+            - prod_UGbzEwRzrMBkMq
+            - prod_UGc0o1j6kjrMBR
+            - prod_TSYpaQ8bCYpBJH
+            - prod_U6SOp9rhsrqlyd
+          x-enum-varnames:
+            - DEVELOPER
+            - PROJECTROOM
+            - CHATINTEGRATION_STARTER
+            - CHATINTEGRATION_PROFESSIONAL
+            - ADD_ON_200GB
+            - ADD_ON_500GB
+            - ADD_ON_1TB
+            - CHAT_AGENT
+            - KNOWLEDGE_BASE_PROJECT
+        beta:
+          type: string
+          enum:
+            - prod_UIWeQ2wZRIymNt
+            - prod_UIWbVvYWUIO9rS
+            - prod_UIWeNAcbEB6cpU
+            - prod_UIWe1y22cGjtBc
+            - prod_UIWdxTmTrPqyCf
+            - prod_UIWdJe6Y1AaXwq
+            - prod_UIWcK0RJvGV4Qw
+            - prod_UIWfac6b2jgkQO
+            - prod_UIWf6dnMQOKg22
+
+          x-enum-varnames:
+            - DEVELOPER
+            - PROJECTROOM
+            - CHATINTEGRATION_STARTER
+            - CHATINTEGRATION_PROFESSIONAL
+            - ADD_ON_200GB
+            - ADD_ON_500GB
+            - ADD_ON_1TB
+            - CHAT_AGENT
+            - KNOWLEDGE_BASE_PROJECT
+
 
     Product:
       type: object
