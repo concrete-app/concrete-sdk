@@ -55,12 +55,12 @@ export const Prices = {
 export const Coupons = {
   beta: {
     NEWCOPYSTORE:     "8OtmmkeX",
-    PROJECTROOM:      "MrflZW53",
+    PROJECTROOM:      "promo_1TK1xfE2PhgH7BCtRCs7ZPPB",
     TESTER_12_MONTHS: "adiENO5W",
   },
   prod: {
     NEWCOPYSTORE:     "8OtmmkeX",
-    PROJECTROOM:      "MrflZW53",
+    PROJECTROOM:      "promo_1TK1yWCjm4ij4OwQQzPUJXGV",
     TESTER_12_MONTHS: "adiENO5W",
   },
 } as const;
