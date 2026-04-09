@@ -117,7 +117,7 @@ components:
         beta:
           type: string
           enum:
-            - 8OtmmkeX
+            - promo_1TKCbfE2PhgH7BCt232UFVMF
             - promo_1TK1xfE2PhgH7BCtRCs7ZPPB
             - adiENO5W
           x-enum-varnames:
@@ -127,7 +127,7 @@ components:
         prod:
           type: string
           enum:
-            - 8OtmmkeX
+            - promo_1T9RpqCjm4ij4OwQkyJpNJDw
             - promo_1TK1yWCjm4ij4OwQQzPUJXGV
             - adiENO5W
           x-enum-varnames:
