@@ -47,6 +47,39 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UploadResponse'
+  /baugesuch/run:
+    servers:
+      - url: https://baugesuch-run-w2uumyfi7a-oa.a.run.app
+    post:
+      summary: Run baugesuch compliance check
+      operationId: runBaugesuch
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - documents
+              properties:
+                documents:
+                  type: array
+                  items:
+                    type: string
+                  description: List of extracted document texts to analyse
+      responses:
+        '200':
+          description: Compliance report generated successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaugesuchRunResponse'
+        '401':
+          description: Invalid or missing API key
+        '400':
+          description: Invalid request body
   /start_vector_update:
     servers:
       - url: https://vectorize-user-kb-api-w2uumyfi7a-oa.a.run.app
@@ -62,7 +95,22 @@ paths:
                 $ref: '#/components/schemas/VectorUpdateResponse'
 
 components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
   schemas:
+    BaugesuchRunResponse:
+      type: object
+      properties:
+        summary:
+          type: string
+          description: Markdown compliance report
+        results:
+          type: array
+          items:
+            type: object
+          description: Per-chapter compliance results
     Prices:
       type: object
       properties:

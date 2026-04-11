@@ -10,6 +10,7 @@ from .core.http_response import AsyncHttpResponse, HttpResponse
 from .core.parse_error import ParsingError
 from .core.pydantic_utilities import parse_obj_as
 from .core.request_options import RequestOptions
+from .types.baugesuch_run_response import BaugesuchRunResponse
 from .types.health_status import HealthStatus
 from .types.upload_response import UploadResponse
 from .types.vector_update_response import VectorUpdateResponse
@@ -153,6 +154,53 @@ class RawConcreteApi:
             )
         raise ApiError(status_code=_response.status_code, headers=dict(_response.headers), body=_response_json)
 
+    def run_baugesuch(
+        self,
+        *,
+        documents: typing.List[str],
+        request_options: typing.Optional[RequestOptions] = None,
+    ) -> HttpResponse[BaugesuchRunResponse]:
+        """
+        Run the baugesuch LangGraph compliance-check agent.
+
+        Parameters
+        ----------
+        documents : typing.List[str]
+            List of extracted document texts to analyse.
+
+        request_options : typing.Optional[RequestOptions]
+            Request-specific configuration.
+
+        Returns
+        -------
+        HttpResponse[BaugesuchRunResponse]
+            Compliance report generated successfully
+        """
+        _response = self._client_wrapper.httpx_client.request(
+            "baugesuch/run",
+            method="POST",
+            json={"documents": documents},
+            request_options=request_options,
+        )
+        try:
+            if 200 <= _response.status_code < 300:
+                _data = typing.cast(
+                    BaugesuchRunResponse,
+                    parse_obj_as(
+                        type_=BaugesuchRunResponse,  # type: ignore
+                        object_=_response.json(),
+                    ),
+                )
+                return HttpResponse(response=_response, data=_data)
+            _response_json = _response.json()
+        except JSONDecodeError:
+            raise ApiError(status_code=_response.status_code, headers=dict(_response.headers), body=_response.text)
+        except ValidationError as e:
+            raise ParsingError(
+                status_code=_response.status_code, headers=dict(_response.headers), body=_response.json(), cause=e
+            )
+        raise ApiError(status_code=_response.status_code, headers=dict(_response.headers), body=_response_json)
+
 
 class AsyncRawConcreteApi:
     def __init__(self, *, client_wrapper: AsyncClientWrapper):
@@ -277,6 +325,53 @@ class AsyncRawConcreteApi:
                     VectorUpdateResponse,
                     parse_obj_as(
                         type_=VectorUpdateResponse,  # type: ignore
+                        object_=_response.json(),
+                    ),
+                )
+                return AsyncHttpResponse(response=_response, data=_data)
+            _response_json = _response.json()
+        except JSONDecodeError:
+            raise ApiError(status_code=_response.status_code, headers=dict(_response.headers), body=_response.text)
+        except ValidationError as e:
+            raise ParsingError(
+                status_code=_response.status_code, headers=dict(_response.headers), body=_response.json(), cause=e
+            )
+        raise ApiError(status_code=_response.status_code, headers=dict(_response.headers), body=_response_json)
+
+    async def run_baugesuch(
+        self,
+        *,
+        documents: typing.List[str],
+        request_options: typing.Optional[RequestOptions] = None,
+    ) -> AsyncHttpResponse[BaugesuchRunResponse]:
+        """
+        Run the baugesuch LangGraph compliance-check agent.
+
+        Parameters
+        ----------
+        documents : typing.List[str]
+            List of extracted document texts to analyse.
+
+        request_options : typing.Optional[RequestOptions]
+            Request-specific configuration.
+
+        Returns
+        -------
+        AsyncHttpResponse[BaugesuchRunResponse]
+            Compliance report generated successfully
+        """
+        _response = await self._client_wrapper.httpx_client.request(
+            "baugesuch/run",
+            method="POST",
+            json={"documents": documents},
+            request_options=request_options,
+        )
+        try:
+            if 200 <= _response.status_code < 300:
+                _data = typing.cast(
+                    BaugesuchRunResponse,
+                    parse_obj_as(
+                        type_=BaugesuchRunResponse,  # type: ignore
                         object_=_response.json(),
                     ),
                 )

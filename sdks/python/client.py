@@ -9,6 +9,7 @@ from .core.logging import LogConfig, Logger
 from .core.request_options import RequestOptions
 from .environment import ConcreteApiEnvironment
 from .raw_client import AsyncRawConcreteApi, RawConcreteApi
+from .types.baugesuch_run_response import BaugesuchRunResponse
 from .types.health_status import HealthStatus
 from .types.upload_response import UploadResponse
 from .types.vector_update_response import VectorUpdateResponse
@@ -173,6 +174,39 @@ class ConcreteApi:
         _response = self._raw_client.start_vector_update(request_options=request_options)
         return _response.data
 
+    def run_baugesuch(
+        self,
+        *,
+        documents: typing.List[str],
+        request_options: typing.Optional[RequestOptions] = None,
+    ) -> BaugesuchRunResponse:
+        """
+        Run the baugesuch LangGraph compliance-check agent.
+
+        Parameters
+        ----------
+        documents : typing.List[str]
+            List of extracted document texts to analyse.
+
+        request_options : typing.Optional[RequestOptions]
+            Request-specific configuration.
+
+        Returns
+        -------
+        BaugesuchRunResponse
+            Compliance report generated successfully
+
+        Examples
+        --------
+        from concrete import ConcreteApi
+
+        client = ConcreteApi(base_url="https://baugesuch-run-....cloudfunctions.net", api_key="YOUR_API_KEY")
+        result = client.run_baugesuch(documents=["[Dokument: plan.pdf]\\n\\n..."])
+        print(result.summary)
+        """
+        _response = self._raw_client.run_baugesuch(documents=documents, request_options=request_options)
+        return _response.data
+
 
 class AsyncConcreteApi:
     """
@@ -322,6 +356,31 @@ class AsyncConcreteApi:
         asyncio.run(main())
         """
         _response = await self._raw_client.upload_file(file=file, metadata=metadata, request_options=request_options)
+        return _response.data
+
+    async def run_baugesuch(
+        self,
+        *,
+        documents: typing.List[str],
+        request_options: typing.Optional[RequestOptions] = None,
+    ) -> BaugesuchRunResponse:
+        """
+        Run the baugesuch LangGraph compliance-check agent.
+
+        Parameters
+        ----------
+        documents : typing.List[str]
+            List of extracted document texts to analyse.
+
+        request_options : typing.Optional[RequestOptions]
+            Request-specific configuration.
+
+        Returns
+        -------
+        BaugesuchRunResponse
+            Compliance report generated successfully
+        """
+        _response = await self._raw_client.run_baugesuch(documents=documents, request_options=request_options)
         return _response.data
 
     async def start_vector_update(

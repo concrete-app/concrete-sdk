@@ -6,6 +6,7 @@ import typing
 from importlib import import_module
 
 if typing.TYPE_CHECKING:
+    from .baugesuch_run_response import BaugesuchRunResponse
     from .health_status import HealthStatus
     from .product import Product
     from .product_config import ProductConfig
@@ -28,6 +29,7 @@ if typing.TYPE_CHECKING:
     from .upload_response import UploadResponse
     from .vector_update_response import VectorUpdateResponse
 _dynamic_imports: typing.Dict[str, str] = {
+    "BaugesuchRunResponse": ".baugesuch_run_response",
     "HealthStatus": ".health_status",
     "Product": ".product",
     "ProductConfig": ".product_config",
@@ -74,6 +76,7 @@ def __dir__():
 
 
 __all__ = [
+    "BaugesuchRunResponse",
     "HealthStatus",
     "Product",
     "ProductConfig",
