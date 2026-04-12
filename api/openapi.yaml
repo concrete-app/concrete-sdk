@@ -47,12 +47,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UploadResponse'
-  /baugesuch/run:
+  /baugesuch/start:
     servers:
-      - url: https://baugesuch-run-w2uumyfi7a-oa.a.run.app
+      - url: https://baugesuch-start-w2uumyfi7a-oa.a.run.app
     post:
-      summary: Run baugesuch compliance check
-      operationId: runBaugesuch
+      summary: Start an async baugesuch compliance check
+      operationId: startBaugesuch
       security:
         - BearerAuth: []
       requestBody:
@@ -70,16 +70,46 @@ paths:
                     type: string
                   description: List of extracted document texts to analyse
       responses:
-        '200':
-          description: Compliance report generated successfully
+        '202':
+          description: Run started successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/BaugesuchRunResponse'
+                $ref: '#/components/schemas/BaugesuchStartResponse'
         '401':
           description: Invalid or missing API key
         '400':
           description: Invalid request body
+  /baugesuch/run/{thread_id}/{run_id}:
+    servers:
+      - url: https://baugesuch-start-w2uumyfi7a-oa.a.run.app
+    get:
+      summary: Wait for baugesuch run completion and return result
+      operationId: getBaugesuchRun
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: thread_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: run_id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Run completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BaugesuchRunResult'
+        '401':
+          description: Invalid or missing API key
+        '404':
+          description: Run not found
   /start_vector_update:
     servers:
       - url: https://vectorize-user-kb-api-w2uumyfi7a-oa.a.run.app
@@ -100,8 +130,22 @@ components:
       type: http
       scheme: bearer
   schemas:
-    BaugesuchRunResponse:
+    BaugesuchStartResponse:
       type: object
+      required:
+        - thread_id
+        - run_id
+      properties:
+        thread_id:
+          type: string
+          description: LangGraph thread ID
+        run_id:
+          type: string
+          description: LangGraph run ID
+    BaugesuchRunResult:
+      type: object
+      required:
+        - summary
       properties:
         summary:
           type: string
