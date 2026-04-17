@@ -13,6 +13,7 @@ export const Products = {
     ADD_ON_1TB:                   "prod_UIWcK0RJvGV4Qw",
     CHAT_AGENT:                   "prod_UIWfac6b2jgkQO",
     KNOWLEDGE_BASE_PROJECT:       "prod_UIWf6dnMQOKg22",
+    LERNMEDIEN:                   "prod_ULoucf3hhqGwPk",
   },
   prod: {
     DEVELOPER:                    "prod_UBhelBG3P9qpj5",
@@ -24,6 +25,7 @@ export const Products = {
     ADD_ON_1TB:                   "prod_UGc0o1j6kjrMBR",
     CHAT_AGENT:                   "prod_TSYpaQ8bCYpBJH",
     KNOWLEDGE_BASE_PROJECT:       "prod_U6SOp9rhsrqlyd",
+    LERNMEDIEN:                   "prod_ULotwqdgr3hjWJ",
   },
 } as const;
 

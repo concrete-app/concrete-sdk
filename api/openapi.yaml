@@ -242,6 +242,7 @@ components:
             - prod_UIWcK0RJvGV4Qw
             - prod_UIWfac6b2jgkQO
             - prod_UIWf6dnMQOKg22
+            - prod_ULoucf3hhqGwPk
           x-enum-varnames:
             - DEVELOPER
             - PROJECTROOM
@@ -252,6 +253,7 @@ components:
             - ADD_ON_1TB
             - CHAT_AGENT
             - KNOWLEDGE_BASE_PROJECT
+            - LERNMEDIEN
         prod:
           type: string
           enum:
@@ -264,6 +266,7 @@ components:
             - prod_UGc0o1j6kjrMBR
             - prod_TSYpaQ8bCYpBJH
             - prod_U6SOp9rhsrqlyd
+            - prod_ULotwqdgr3hjWJ
           x-enum-varnames:
             - DEVELOPER
             - PROJECTROOM
@@ -274,6 +277,7 @@ components:
             - ADD_ON_1TB
             - CHAT_AGENT
             - KNOWLEDGE_BASE_PROJECT
+            - LERNMEDIEN
 
     ProductId:
       type: string

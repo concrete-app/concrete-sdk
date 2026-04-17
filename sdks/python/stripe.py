@@ -15,6 +15,7 @@ Products: Dict[StripeEnv, Dict[str, str]] = {
         "AddOn1Tb":                    "prod_UIWcK0RJvGV4Qw",
         "ChatAgent":                   "prod_UIWfac6b2jgkQO",
         "KnowledgeBaseProject":        "prod_UIWf6dnMQOKg22",
+        "Lernmedien":                  "prod_ULoucf3hhqGwPk",
     },
     "prod": {
         "Developer":                   "prod_UBhelBG3P9qpj5",
@@ -26,6 +27,7 @@ Products: Dict[StripeEnv, Dict[str, str]] = {
         "AddOn1Tb":                    "prod_UGc0o1j6kjrMBR",
         "ChatAgent":                   "prod_TSYpaQ8bCYpBJH",
         "KnowledgeBaseProject":        "prod_U6SOp9rhsrqlyd",
+        "Lernmedien":                  "prod_ULotwqdgr3hjWJ",
     },
 }
 
