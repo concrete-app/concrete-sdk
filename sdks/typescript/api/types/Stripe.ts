@@ -54,6 +54,18 @@ export const Prices = {
   },
 } as const;
 
+export const ChatIntegrationRunLimits = {
+  starter:      2500,
+  professional: 10000,
+} as const;
+
+export const AGENT_RUN_LIMIT = 10000;
+
+export const STORAGE_LIMIT_FREE_GB   = 5;
+export const STORAGE_LIMIT_BASE_GB   = 200;
+export const BYTES_PER_GB            = 1024 * 1024 * 1024;
+export const STORAGE_LIMIT_FREE_BYTES = STORAGE_LIMIT_FREE_GB * BYTES_PER_GB;
+
 export const Coupons = {
   beta: {
     NEWCOPYSTORE:     "promo_1TKCbfE2PhgH7BCt232UFVMF",

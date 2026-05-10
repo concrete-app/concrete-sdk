@@ -56,6 +56,18 @@ Prices: Dict[StripeEnv, Dict[str, str]] = {
     },
 }
 
+CHAT_INTEGRATION_RUN_LIMITS: Dict[str, int] = {
+    "starter":      2_500,
+    "professional": 10_000,
+}
+
+AGENT_RUN_LIMIT: int = 10_000
+
+STORAGE_LIMIT_FREE_GB: int = 5
+STORAGE_LIMIT_BASE_GB: int = 200
+BYTES_PER_GB: int = 1_024 * 1_024 * 1_024
+STORAGE_LIMIT_FREE_BYTES: int = STORAGE_LIMIT_FREE_GB * BYTES_PER_GB
+
 Coupons: Dict[StripeEnv, Dict[str, str]] = {
     "beta": {
         "Newcopystore":    "promo_1TKCbfE2PhgH7BCt232UFVMF",
