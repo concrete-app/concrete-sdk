@@ -131,6 +131,7 @@ class Position:
     einheit: str | None = None
     einzelpreis: float | None = None   # None in einem Angebot -- noch nicht ausgefuellt
     gesamtpreis: float | None = None
+    material: str | None = None        # spaeter vom LLM angereichert (siehe material.py), nicht vom Parser
 
     def __post_init__(self) -> None:
         if self.menge is not None and self.einzelpreis is not None and self.gesamtpreis is not None:
