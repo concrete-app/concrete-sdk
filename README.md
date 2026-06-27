@@ -1,11 +1,14 @@
 # Concrete SDK
 
-A multip-language monorepo for the `concrete` SDK. The API Schema acts as the single source of truth for generating identical Python and TypeScript clients.
+Two independent, hand-maintained packages shared across the Concrete project.
 
 ## Structure
-- `api/` - The OpenAPI spec (Single Source of Truth)
-- `packages/python/` - The Python SDK source.
-- `packages/typescript/` - The TypeScript SDK source.
+- `sdks/python/` — Python package `concrete_sdk`. Currently holds `concrete_sdk.werkvertrag`,
+  the deterministic Werkvertrag/Leistungsverzeichnis parser and Gemini transcription pipeline.
+- `sdks/typescript/` — npm package `concrete-sdk`. Holds `ConcreteApi.Products/Prices/Coupons`,
+  the Stripe product/price/coupon constants used by `forum`'s billing logic.
+- `cli/` — `concrete-cli`, a separate standalone developer CLI.
 
-## Generation
-*To be implemented:* SDK Generation pipeline using the OpenAPI specification.
+## Publishing
+- Python: `cd sdks/python && python -m build && twine upload dist/*`
+- TypeScript: `cd sdks/typescript && npm run build && npm publish`
