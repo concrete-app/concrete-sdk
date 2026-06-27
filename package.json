@@ -1,7 +1,0 @@
-{
-  "name": "concrete-sdk-monorepo",
-  "private": true,
-  "workspaces": [
-    "sdks/*"
-  ]
-}
