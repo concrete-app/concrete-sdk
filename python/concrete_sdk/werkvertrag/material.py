@@ -14,7 +14,8 @@ from .parser import Position
 log = logging.getLogger("concrete_sdk.werkvertrag.material")
 
 
-class MaterialClassification(BaseModel):
+class PositionMaterial(BaseModel):
+    position_number: str = Field(..., description="Exakt die 'position_number' aus der Eingabe.")
     action: Literal["existing", "new", "none"] = Field(
         ...,
         description=(
@@ -34,78 +35,96 @@ class MaterialClassification(BaseModel):
     )
 
 
-class MaterialClassifier:
-    """Classifies positions one at a time, in document order, against the running set of
-    materials it has already assigned earlier in the same contract. This has to be sequential
-    rather than parallel/batched: each call's prompt depends on the accumulated output of every
-    earlier call, which is what keeps "Gipskartonplatte" and "Gipsplatte 12.5mm Feuerschutz" from
-    becoming two different labels for the same material across one contract.
+class MaterialClassificationBatch(BaseModel):
+    classifications: list[PositionMaterial] = Field(
+        ..., description="Genau eine Klassifikation pro Position aus der Eingabe, in beliebiger Reihenfolge."
+    )
 
-    `llm` is a caller-supplied chat model; `llm.with_structured_output(MaterialClassification)` is
-    called once in `__init__` to build the actual per-call model. One instance is good for exactly
-    one document -- `known_materials` is per-contract state, not meant to be reused across documents.
+
+class MaterialClassifier:
+    """Classifies positions in sequential batches, against the running set of materials it has
+    already assigned in earlier batches of the same contract.
+
+    Batches (not individual positions) run sequentially: each batch's prompt depends on the
+    accumulated `known_materials` from every earlier batch, which is what keeps "Gipskartonplatte"
+    and "Gipsplatte 12.5mm Feuerschutz" from becoming two different labels for the same material
+    across one contract. Within a batch, the model classifies all positions in one call -- it sees
+    them all at once, so it can also dedupe a newly-introduced material across that batch itself.
+
+    `llm` is a caller-supplied chat model; `llm.with_structured_output(MaterialClassificationBatch)`
+    is called once in `__init__` to build the actual per-call model. One instance is good for
+    exactly one document -- `known_materials` is per-contract state, not meant to be reused across
+    documents.
     """
 
+    BATCH_SIZE = 10
+
     MATERIAL_CLASSIFICATION_PROMPT = """\
-Du klassifizierst Materialien in einer einzelnen Position eines Schweizer Leistungsverzeichnisses (LV).
+Erkenne das konkrete Baumaterial (z.B. Gipsplatte, OSB, Mineralwolle, Beton, Stahl) in jeder der
+folgenden LV-Positionen -- nicht die Arbeitsleistung oder Konstruktion. Klassifiziere JEDE Position
+einzeln, auch wenn mehrere das gleiche Material nennen.
 
-Aufgabe: Prüfe den Positionstext auf ein genanntes Baumaterial (z.B. Gipsplatte, OSB-Platte,
-Mineralwolle, Beton, Stahl). Es geht NICHT um die Arbeitsleistung oder Konstruktion, sondern um
-das konkrete Material/Produkt.
+- Passt es zu einem Eintrag in "Bisherige Materialien" (auch bei Synonym/Abkürzung, z.B.
+  "Gipskartonplatte" == "Gipsplatte")? -> action="existing", material=genau dieser Eintrag.
+- Sonst, falls ein Material genannt wird -> action="new", material=kurzes normalisiertes Label
+  (Produktgattung statt voller Beschreibung, z.B. "Gipsplatte" statt "Gipsplatte 12.5mm F30 weiss").
+  Nennen mehrere Positionen in diesem Batch dasselbe neue Material, gib ihnen dasselbe Label.
+- Kein Material erkennbar (Montage, Transport, Regie) -> action="none".
 
-Wenn ein Material genannt wird:
-- Prüfe zuerst, ob es inhaltlich einem der "Bisherige Materialien" entspricht (auch bei
-  abweichender Schreibweise, Abkürzung oder Synonym, z.B. "Gipskartonplatte" == "Gipsplatte",
-  "OSB" == "Grobspanplatte OSB") -- falls ja: action="existing", material=genau dieses bestehende Label.
-- Nur wenn kein bestehendes Label passt: action="new" mit einem neuen, kurzen, normalisierten Label
-  (Produktgattung, nicht die volle Beschreibung -- z.B. "Gipsplatte" statt "Gipsplatte 12.5mm
-  Feuerschutz F30 weiss").
-- Wenn kein Material erkennbar ist (z.B. reine Montage-/Arbeitsposition, Transport, Regie): action="none".
-
-Antworte ausschliesslich mit dem JSON-Objekt, kein Kommentar.
+Antworte mit genau einer Klassifikation pro Position, position_number exakt wie angegeben.
 """
 
     def __init__(self, llm, positions: list[Position]):
-        self.model = llm.with_structured_output(MaterialClassification)
+        self.model = llm.with_structured_output(MaterialClassificationBatch)
         self.positions = positions
         self.known_materials: list[str] = []
 
-    def _build_user_prompt(self, position: Position) -> str:
+    def _build_user_prompt(self, batch: list[Position]) -> str:
         materials_block = (
             "Bisherige Materialien: " + ", ".join(self.known_materials)
             if self.known_materials
             else "Bisherige Materialien: (noch keine)"
         )
-        return f"{materials_block}\n\nPosition {position.title}\n\n{position.text}"
+        positions_block = "\n\n".join(
+            f"Position {position.number}: {position.title}\n{position.text}" for position in batch
+        )
+        return f"{materials_block}\n\n{positions_block}"
 
-    async def _classify_position(self, position: Position) -> MaterialClassification:
+    async def _classify_batch(self, batch: list[Position]) -> MaterialClassificationBatch:
         try:
             return await self.model.ainvoke([
                 {"role": "system", "content": self.MATERIAL_CLASSIFICATION_PROMPT},
-                {"role": "user", "content": self._build_user_prompt(position)},
+                {"role": "user", "content": self._build_user_prompt(batch)},
             ])
         except Exception:
-            # A single failed position must not abort enrichment for the other ~99 -- degrade to
-            # "none" and let the loop continue.
-            log.exception("[material] classification failed for position %s", position.number)
-            return MaterialClassification(action="none", material=None)
+            # A failed batch must not abort enrichment for the rest of the document -- degrade
+            # this batch to "no classifications" and let the loop continue with the next one.
+            log.exception(
+                "[material] classification failed for batch %s",
+                [position.number for position in batch],
+            )
+            return MaterialClassificationBatch(classifications=[])
 
     async def classify_positions(self) -> list[Position]:
         """Classifies every position in document order, mutating `position.material` in place
         and returning the same list for convenience."""
-        for position in self.positions:
-            if not position.text.strip():
-                continue
+        positions_to_classify = [position for position in self.positions if position.text.strip()]
 
-            result = await self._classify_position(position)
-            if result.action == "none" or not result.material:
-                continue
+        for start in range(0, len(positions_to_classify), self.BATCH_SIZE):
+            batch = positions_to_classify[start : start + self.BATCH_SIZE]
+            batch_by_number = {position.number: position for position in batch}
 
-            # Pydantic can't constrain action="existing" to actually name a list member -- if the
-            # model hallucinates a near-miss label, treat it as new rather than silently dropping
-            # it, which would otherwise lose the material entirely.
-            position.material = result.material
-            if result.material not in self.known_materials:
-                self.known_materials.append(result.material)
+            result = await self._classify_batch(batch)
+            for classification in result.classifications:
+                position = batch_by_number.get(classification.position_number)
+                if position is None or classification.action == "none" or not classification.material:
+                    continue
+
+                # Pydantic can't constrain action="existing" to actually name a list member -- if
+                # the model hallucinates a near-miss label, treat it as new rather than silently
+                # dropping it, which would otherwise lose the material entirely.
+                position.material = classification.material
+                if classification.material not in self.known_materials:
+                    self.known_materials.append(classification.material)
 
         return self.positions
