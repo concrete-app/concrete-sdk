@@ -394,8 +394,7 @@ class PositionParser:
         self._positions: dict[str, Position] = {}
         self._order: list[str] = []
         self._current_chapter: str | None = None
-        self._active_group: str | None = None
-        self._active_subgroup: str | None = None
+        self._max_group_suffix: int | None = None  # hoechster ".x00"-Suffix im aktuellen Kapitel
 
         markers = list(self.MARKER_PATTERN.finditer(text))
         for index, marker in enumerate(markers):
@@ -418,11 +417,6 @@ class PositionParser:
         number, level, parent_number = self._resolve_number_and_level(marker)
         if number is None:
             return
-
-        if level == "group":
-            self._active_group, self._active_subgroup = number, None
-        elif level == "subgroup":
-            self._active_subgroup = number
 
         if number in self._positions:
             # Fortsetzung nach Seitenumbruch -- Text anhaengen statt doppelten Knoten zu erzeugen
@@ -453,23 +447,50 @@ class PositionParser:
     def _resolve_number_and_level(self, marker: re.Match) -> tuple[str | None, str, str | None]:
         if marker.group("chapter"):
             number = marker.group("chapter")
-            self._current_chapter = number
-            self._active_group = self._active_subgroup = None
+            self._set_chapter(number)
             return number, "chapter", None
 
         if marker.group("continuation"):
+            # Vollqualifizierte Nummer steht explizit im Text (typischerweise nach einem
+            # Seitenumbruch) -- vertrauenswuerdig, kein Kapitelwechsel-Rateversuch noetig.
             number = marker.group("continuation")
-            self._current_chapter = number.split(".")[0]
-            suffix = number.split(".", 1)[1]
+            chapter, suffix = number.split(".", 1)
+            if chapter != self._current_chapter:
+                self._set_chapter(chapter)
         else:
             if self._current_chapter is None:
                 return None, "leaf", None  # Sub-Marker ohne vorherigen Kapitelkontext -- ueberspringen statt zu raten
             suffix = marker.group("sub")
-            number = f"{self._current_chapter}.{suffix}"
+
+            # NPK-Gruppen ("x00") zaehlen innerhalb eines Kapitels nur aufwaerts (.100 -> .200 ->
+            # ... -> .800), nie zurueck. Faellt ein bloss angehaengter (nicht vollqualifizierter)
+            # Gruppen-Marker auf einen bereits gesehenen oder kleineren Hunderter-Block zurueck, ist
+            # so gut wie sicher das eigentliche Kapitel-Header (z.B. das NPK-Standardpaar "012
+            # Inbegriffene" -> "013 Nicht inbegriffene Leistungen") bei der Transkription verloren
+            # gegangen -- ohne diese Korrektur wuerde der gesamte Block sonst stillschweigend ins
+            # vorherige Kapitel einsortiert (und bei Nummern-Kollision sogar in dessen Text gemerged).
+            if self._level_for_suffix(suffix) == "group" and self._max_group_suffix is not None:
+                if int(suffix) <= self._max_group_suffix:
+                    self._set_chapter(self._next_chapter_guess())
 
         level = self._level_for_suffix(suffix)
-        parent_number = self._active_subgroup or self._active_group or self._current_chapter
+        if level == "group":
+            self._max_group_suffix = max(self._max_group_suffix or 0, int(suffix))
+
+        number = f"{self._current_chapter}.{suffix}"
+        parent_number = self._structural_parent(self._current_chapter, suffix, level)
         return number, level, parent_number
+
+    def _set_chapter(self, chapter: str) -> None:
+        self._current_chapter = chapter
+        self._max_group_suffix = None
+
+    def _next_chapter_guess(self) -> str:
+        # Bestmoegliche Annahme, wenn ein Kapitel-Header fehlt: das naechste Kapitel im NPK ist so
+        # gut wie immer die fortlaufende Nummer (z.B. 012 -> 013) -- nicht beweisbar richtig, aber
+        # zuverlaessiger als blind im falschen Kapitel weiterzulaufen.
+        assert self._current_chapter is not None
+        return str(int(self._current_chapter) + 1).zfill(len(self._current_chapter))
 
     @staticmethod
     def _level_for_suffix(suffix: str) -> str:
@@ -480,6 +501,31 @@ class PositionParser:
         if suffix.endswith("0"):
             return "subgroup"
         return "leaf"
+
+    def _structural_parent(self, chapter: str, suffix: str, level: str) -> str | None:
+        # Der NPK-Hierarchie liegt reine Ziffern-Arithmetik zugrunde (Hunderter = Gruppe, Zehner =
+        # Untergruppe), nicht die Reihenfolge, in der Marker im Text auftauchen -- der Elternknoten
+        # einer Position laesst sich daher direkt aus ihrer eigenen Nummer berechnen, ganz ohne
+        # mutable "zuletzt gesehen"-Zeiger, die durch Geschwister-Positionen ueberschrieben wuerden.
+        #
+        # Existenz wird auf jeder Ebene geprueft, inkl. des Kapitels selbst: Tritt ein Kapitel nie
+        # als eigene Marker-Zeile auf (nur als Praefix einer vollqualifizierten Nummer), waere
+        # "chapter" sonst eine Referenz auf einen nie erzeugten Knoten -- lieber gar kein
+        # parent_number als eine haengende Referenz, an der die Position im UI-Baum verschwindet.
+        if level == "subgroup" and len(suffix) >= 3:
+            group_number = f"{chapter}.{suffix[:-2]}00"
+            if group_number in self._positions:
+                return group_number
+        if level == "leaf":
+            if len(suffix) >= 2:
+                subgroup_number = f"{chapter}.{suffix[:-1]}0"
+                if subgroup_number in self._positions:
+                    return subgroup_number
+            if len(suffix) >= 3:
+                group_number = f"{chapter}.{suffix[:-2]}00"
+                if group_number in self._positions:
+                    return group_number
+        return chapter if chapter in self._positions else None
 
     @staticmethod
     def _first_line(body: str) -> str:
