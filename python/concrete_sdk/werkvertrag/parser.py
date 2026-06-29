@@ -346,6 +346,128 @@ class VorbedingungenParser:
         )
 
 
+_LEADING_DIGITS = re.compile(r"\d{1,4}")
+
+
+def _is_wrapped_continuation(line: str) -> bool:
+    # A real bare chapter marker ("100 Vorarbeiten.") always has whitespace right after its
+    # digits, and a real NPK continuation number ("211.111 ...") always has "." + digit right
+    # after. Anything else immediately glued to the digits ("27/ca.700mm.", "15kN/m1.",
+    # "700ff enthalten.", "265:2012", "15%") is a value that got hard-wrapped onto its own line
+    # by the LLM transcription step and would otherwise be misread by MARKER_PATTERN below as a
+    # new chapter.
+    #
+    # Deliberately NOT a single regex: `\d{1,4}\S` looks equivalent but isn't -- `\S` matches
+    # digits too, so the engine backtracks `\d{1,4}` down to fewer digits and lets `\S` consume
+    # one of the "leftover" digits, silently matching genuine chapters like "100 Vorarbeiten."
+    # as if the unit-glue case had fired. Plain indexing has no such backtracking pitfall.
+    match = _LEADING_DIGITS.match(line)
+    if not match:
+        return False
+    rest = line[match.end():]
+    if not rest or rest[0].isspace():
+        return False
+    if rest[0] == "." and len(rest) > 1 and rest[1].isdigit():
+        return False
+    return True
+
+
+_FOOTER_LETTERHEAD = re.compile(r"CH[EF]-\d{3}\.\d{3}\.\d{3}\s*MWST")  # OCR sometimes confuses E/F
+_FOOTER_PROJEKT = re.compile(r"^Projekt:\s*\d+\s*$")
+_FOOTER_SEITE = re.compile(r"^Seite:\s*\d+\s*$")
+_FOOTER_BKP = re.compile(r"^BKP:\s*\d+\s*$")
+_FOOTER_AUFTRAG = re.compile(r"^Auftrag:\s*\d*\s*NPK-Bau:\s*\d+.*$")
+_DATE_LINE = re.compile(r"^\d{1,2}\.\d{1,2}\.\d{4}\s*$")
+_CATALOG_ID = re.compile(r"NPK-Bau:\s*(\d+)")
+# A single Werkvertrag can concatenate several independent NPK catalogs back to back (e.g. "343
+# Hinterlueftete Fassadenbekleidungen" followed by "931 Holzbauarbeiten"), each restarting its own
+# chapter numbering from "000". The "Auftrag: N NPK-Bau: NNN <name> ..." line is the only marker of
+# where one catalog ends and the next begins, so instead of discarding it as pure noise like the
+# rest of the footer, it's rewritten into this sentinel so PositionParser can pick the boundary
+# back up after normalize_markdown runs and namespace position numbers per catalog.
+_CATALOG_SENTINEL_PREFIX = "\x00CATALOG:"
+_CATALOG_SENTINEL_SUFFIX = "\x00"
+_BOLD_WRAPPED_LINE = re.compile(r"^\*\*(.+)\*\*$")
+
+
+def _strip_footer_noise(text: str) -> str:
+    # Every page break re-injects the contractor's letterhead plus a handful of fixed-shape
+    # boilerplate lines into the markdown, splitting position text that spans the break. The
+    # letterhead line is always identifiable by the Swiss UID/MWST suffix regardless of which
+    # company it is, and "Projekt: NNNN" / "Seite: NNN" are always immediately followed (no blank
+    # line) by one further noise line -- the client name/city, and the page date -- so those can
+    # be dropped positionally without needing to know what they say. The one thing this can't
+    # catch generically is the repeated project-site-address line (e.g. "Industriestrasse G11,
+    # Luzern"), since recognizing it would require comparing against the address already parsed
+    # out of the document header; left as a known residual, same as the few unresolved soft-wrap
+    # cases in _is_wrapped_continuation.
+    kept: list[str] = []
+    skip_next = False
+    for line in text.split("\n"):
+        stripped = line.strip()
+        if skip_next:
+            skip_next = False
+            continue
+        if _FOOTER_LETTERHEAD.search(stripped):
+            continue
+        if _FOOTER_PROJEKT.match(stripped):
+            skip_next = True
+            continue
+        if _FOOTER_SEITE.match(stripped):
+            skip_next = True
+            continue
+        if _FOOTER_AUFTRAG.match(stripped):
+            catalog_id = _CATALOG_ID.search(stripped)
+            if catalog_id:
+                kept.append(f"{_CATALOG_SENTINEL_PREFIX}{catalog_id.group(1)}{_CATALOG_SENTINEL_SUFFIX}")
+            continue
+        if _FOOTER_BKP.match(stripped) or _DATE_LINE.match(stripped):
+            continue
+        kept.append(line)
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(kept))
+
+
+def _unwrap_bold_headings(text: str) -> str:
+    # The LLM sometimes renders a genuine chapter/group heading as a markdown-bold line
+    # ("**000 Bedingungen**"), which MARKER_PATTERN's start-of-line anchor then never even
+    # attempts to match -- silently dropping that chapter. Restricted to fully bold-wrapped,
+    # single-line, non-table rows: a price-summary table row that happens to start with a bold
+    # cell ("**214 Montagebau in Holz** | **3'301'102.15** | ...") has the exact same shape at the
+    # start of the line, but unwrapping it would misread an unrelated summary row as a real
+    # chapter marker and corrupt whatever legitimately owns that chapter number.
+    unwrapped: list[str] = []
+    for line in text.split("\n"):
+        if "|" not in line:
+            match = _BOLD_WRAPPED_LINE.match(line)
+            if match:
+                line = match.group(1)
+        unwrapped.append(line)
+    return "\n".join(unwrapped)
+
+
+def normalize_markdown(text: str) -> str:
+    """Strips recurring page-footer boilerplate, unwraps bold-only heading lines, then rejoins
+    wrapped-value lines that would otherwise be misread as bogus chapter markers.
+
+    Scoped narrowly to those failure modes -- it does not attempt general PDF-text de-wrapping
+    (e.g. a label like "Architekt:" with its value on the next line is left untouched, since
+    MetaParser/BeteiligteParser rely on that line break). Known residual cases this doesn't catch:
+    a wrap that lands after the digits *and* a space (e.g. "...Art.\\n22 + 23 ...", where "Art."
+    is an abbreviation, not a real sentence end) is indistinguishable from a genuine chapter
+    header by shape alone; and the repeated project-site-address footer line (see
+    `_strip_footer_noise`) isn't identifiable without the document's own parsed address.
+    """
+    text = _strip_footer_noise(text)
+    text = _unwrap_bold_headings(text)
+    normalized: list[str] = []
+    for line in text.split("\n"):
+        if normalized and _is_wrapped_continuation(line):
+            normalized[-1] = f"{normalized[-1]} {line}".rstrip()
+        else:
+            normalized.append(line)
+    return "\n".join(normalized)
+
+
 class PositionParser:
     """Walks the Leistungsverzeichnis and builds the chapter -> group -> subgroup -> leaf tree.
 
@@ -389,25 +511,41 @@ class PositionParser:
         r"|(?P<placeholder>\.{4,}[ \t]*\.{4,}))"
     )
     REFERENCE_PATTERN = re.compile(r"Pos\.?\s*(\d{2,4})\.(\d{1,4})(?:\s*-\s*(\d{1,4}))?")
+    CATALOG_PATTERN = re.compile(
+        re.escape(_CATALOG_SENTINEL_PREFIX) + r"(?P<id>\d+)" + re.escape(_CATALOG_SENTINEL_SUFFIX)
+    )
 
     def parse(self, text: str) -> list[Position]:
         self._positions: dict[str, Position] = {}
         self._order: list[str] = []
         self._current_chapter: str | None = None
         self._max_group_suffix: int | None = None  # hoechster ".x00"-Suffix im aktuellen Kapitel
+        self._current_catalog: str | None = None
 
-        markers = list(self.MARKER_PATTERN.finditer(text))
-        for index, marker in enumerate(markers):
-            body = self._body_text(text, markers, index)
-            self._process_marker(marker, body)
+        text = normalize_markdown(text)
+
+        # A document with only one NPK catalog (the common case) keeps its existing bare numbering
+        # untouched -- only once a second, independently-numbered catalog is actually detected do
+        # position numbers get namespaced by catalog id, see _qualify().
+        catalog_events = list(self.CATALOG_PATTERN.finditer(text))
+        self._multi_catalog = len({event.group("id") for event in catalog_events}) > 1
+
+        events = sorted(catalog_events + list(self.MARKER_PATTERN.finditer(text)), key=lambda m: m.start())
+        for index, event in enumerate(events):
+            if event.re is self.CATALOG_PATTERN:
+                self._current_catalog = event.group("id")
+                continue
+            start = event.end()
+            end = events[index + 1].start() if index + 1 < len(events) else len(text)
+            body = text[start:end].strip()
+            self._process_marker(event, body)
 
         return [self._positions[number] for number in self._order]
 
-    @staticmethod
-    def _body_text(text: str, markers: list[re.Match], index: int) -> str:
-        start = markers[index].end()
-        end = markers[index + 1].start() if index + 1 < len(markers) else len(text)
-        return text[start:end].strip()
+    def _qualify(self, chapter: str) -> str:
+        if self._multi_catalog and self._current_catalog:
+            return f"{self._current_catalog}.{chapter}"
+        return chapter
 
     def _process_marker(self, marker: re.Match, body: str) -> None:
         title = self._first_line(body)
@@ -446,9 +584,9 @@ class PositionParser:
 
     def _resolve_number_and_level(self, marker: re.Match) -> tuple[str | None, str, str | None]:
         if marker.group("chapter"):
-            number = marker.group("chapter")
-            self._set_chapter(number)
-            return number, "chapter", None
+            chapter = marker.group("chapter")
+            self._set_chapter(chapter)
+            return self._qualify(chapter), "chapter", None
 
         if marker.group("continuation"):
             # Vollqualifizierte Nummer steht explizit im Text (typischerweise nach einem
@@ -477,8 +615,9 @@ class PositionParser:
         if level == "group":
             self._max_group_suffix = max(self._max_group_suffix or 0, int(suffix))
 
-        number = f"{self._current_chapter}.{suffix}"
-        parent_number = self._structural_parent(self._current_chapter, suffix, level)
+        qualified_chapter = self._qualify(self._current_chapter)
+        number = f"{qualified_chapter}.{suffix}"
+        parent_number = self._structural_parent(qualified_chapter, suffix, level)
         return number, level, parent_number
 
     def _set_chapter(self, chapter: str) -> None:
