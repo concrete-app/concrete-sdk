@@ -3,6 +3,7 @@ from datetime import date
 from google.cloud.firestore_v1.client import Client
 from datetime import datetime
 
+
 class Referenz(BaseModel):
     datum: date | None = Field(None, description="Date of the reference")
     name_company: str = Field(..., description="Name of the reference")
@@ -48,47 +49,48 @@ class Lead:
         self.email = email
         self.fit_reason = fit_reason
         self.id = id
-        self.db = db
+        self.db: Client | None = db
         self.messages: list[EmailMessage] = []
         self.responded: bool = False
         self.writing_attempts: int = 3
         self.next_writing_attempt: datetime | None = None
-    class FirestoreManager:
-        def _to_dict(self) -> dict:
-            return {
-                "name_company": self.name_company,
-                "name_contact_person": self.name_contact_person,
-                "email": self.email,
-                "fit_reason": self.fit_reason,
-                "messages": [m.model_dump(mode="json") for m in self.messages],
-                "responded": self.responded,
-                "writing_attempts": self.writing_attempts,
-                "next_writing_attempt": self.next_writing_attempt,
-            }
-        def read_lead_from_firebase(self) -> None:
-            """Refresh this instance in place - e.g. to pick up a reply before drafting the next email."""
-            doc = self.db.collection("marketing").document(self.id).get()
-            if not doc.exists:
-                raise KeyError(f"Lead {self.id!r} not found in marketing collection")
-            data = doc.to_dict()
-            self.name_company = data["name_company"]
-            self.name_contact_person = data["name_contact_person"]
-            self.email = data["email"]
-            self.fit_reason = data["fit_reason"]
-            self.messages = [EmailMessage(**m) for m in data.get("messages", [])]
-            self.responded = data.get("responded", False)
-            self.writing_attempts = data.get("writing_attempts", 3)
-            self.next_writing_attempt = data.get("next_writing_attempt")
 
-        def write_lead_to_firebase(self) -> None:
-            """Create or fully overwrite this lead's document - the single source of truth for it.
 
-            If no id is set yet, Firestore assigns one and it's stored back onto this instance.
-            """
-            doc_ref = self.db.collection("marketing").document(self.id) if self.id else self.db.collection("marketing").document()
-            self.id = doc_ref.id
-            doc_ref.set(self._to_dict())
+    def _to_dict(self) -> dict:
+        return {
+            "name_company": self.name_company,
+            "name_contact_person": self.name_contact_person,
+            "email": self.email,
+            "fit_reason": self.fit_reason,
+            "messages": [m.model_dump(mode="json") for m in self.messages],
+            "responded": self.responded,
+            "writing_attempts": self.writing_attempts,
+            "next_writing_attempt": self.next_writing_attempt,
+        }
+    def read_lead_from_firebase(self) -> None:
+        """Refresh this instance in place - e.g. to pick up a reply before drafting the next email."""
+        doc = self.db.collection("marketing").document(self.id).get()
+        if not doc.exists:
+            raise KeyError(f"Lead {self.id!r} not found in marketing collection")
+        data = doc.to_dict()
+        self.name_company = data["name_company"]
+        self.name_contact_person = data["name_contact_person"]
+        self.email = data["email"]
+        self.fit_reason = data["fit_reason"]
+        self.messages = [EmailMessage(**m) for m in data.get("messages", [])]
+        self.responded = data.get("responded", False)
+        self.writing_attempts = data.get("writing_attempts", 3)
+        self.next_writing_attempt = data.get("next_writing_attempt")
 
-        def update_lead_in_firebase(self, **fields) -> None:
-            """Patch specific fields without rewriting the whole document."""
-            self.db.collection("marketing").document(self.id).update(fields)
+    def write_lead_to_firebase(self) -> None:
+        """Create or fully overwrite this lead's document - the single source of truth for it.
+
+        If no id is set yet, Firestore assigns one and it's stored back onto this instance.
+        """
+        doc_ref = self.db.collection("marketing").document(self.id) if self.id else self.db.collection("marketing").document()
+        self.id = doc_ref.id
+        doc_ref.set(self._to_dict())
+
+    def update_lead_in_firebase(self, **fields) -> None:
+        """Patch specific fields without rewriting the whole document."""
+        self.db.collection("marketing").document(self.id).update(fields)
