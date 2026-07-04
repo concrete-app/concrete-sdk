@@ -1,7 +1,11 @@
 from pydantic import BaseModel, Field
-from datetime import date
+from datetime import date, datetime, timedelta
 from google.cloud.firestore_v1.client import Client
-from datetime import datetime
+import json
+
+from google.cloud import secretmanager
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
 
 
 class Referenz(BaseModel):
@@ -28,7 +32,7 @@ class Company(BaseModel):
             f"Team: {mitarbeiter}\n\n"
             f"Referenzen:\n{referenzen}"
         )
-    
+
 
 
 class EmailMessage(BaseModel):
@@ -55,6 +59,12 @@ class Lead:
         self.writing_attempts: int = 3
         self.next_writing_attempt: datetime | None = None
 
+    @classmethod
+    def get(cls, db: Client, lead_id: str) -> "Lead":
+        """Fetch a lead by id."""
+        lead = cls(id=lead_id, db=db, name_company="", name_contact_person="", email="", fit_reason="")
+        lead.read_lead_from_firebase()
+        return lead
 
     def _to_dict(self) -> dict:
         return {
@@ -67,12 +77,8 @@ class Lead:
             "writing_attempts": self.writing_attempts,
             "next_writing_attempt": self.next_writing_attempt,
         }
-    def read_lead_from_firebase(self) -> None:
-        """Refresh this instance in place - e.g. to pick up a reply before drafting the next email."""
-        doc = self.db.collection("marketing").document(self.id).get()
-        if not doc.exists:
-            raise KeyError(f"Lead {self.id!r} not found in marketing collection")
-        data = doc.to_dict()
+
+    def _load(self, data: dict) -> None:
         self.name_company = data["name_company"]
         self.name_contact_person = data["name_contact_person"]
         self.email = data["email"]
@@ -81,6 +87,13 @@ class Lead:
         self.responded = data.get("responded", False)
         self.writing_attempts = data.get("writing_attempts", 3)
         self.next_writing_attempt = data.get("next_writing_attempt")
+
+    def read_lead_from_firebase(self) -> None:
+        """Refresh this instance in place - e.g. to pick up a reply before drafting the next email."""
+        doc = self.db.collection("marketing").document(self.id).get()
+        if not doc.exists:
+            raise KeyError(f"Lead {self.id!r} not found in marketing collection")
+        self._load(doc.to_dict())
 
     def write_lead_to_firebase(self) -> None:
         """Create or fully overwrite this lead's document - the single source of truth for it.
@@ -94,3 +107,22 @@ class Lead:
     def update_lead_in_firebase(self, **fields) -> None:
         """Patch specific fields without rewriting the whole document."""
         self.db.collection("marketing").document(self.id).update(fields)
+
+    def mark_responded(self) -> None:
+        """Flag this lead as responded, stopping the outreach sequence."""
+        self.responded = True
+        self.update_lead_in_firebase(responded=True)
+
+
+    def record_send(self, draft: EmailMessage, followup_days: int = 8) -> None:
+        """Record a sent outreach message and schedule (or clear) the next attempt."""
+        self.messages.append(draft)
+        self.writing_attempts -= 1
+        self.next_writing_attempt = (
+            datetime.now() + timedelta(days=followup_days) if self.writing_attempts > 0 else None
+        )
+        self.update_lead_in_firebase(
+            messages=[m.model_dump(mode="json") for m in self.messages],
+            writing_attempts=self.writing_attempts,
+            next_writing_attempt=self.next_writing_attempt,
+        )
