@@ -61,7 +61,7 @@ class SenderConfig(BaseModel):
     address: str = ""
 
     def render_footer(self) -> str:
-        lines = [self.signoff, "", self.name]
+        lines = [self.signoff, "", f"<b>{self.name}</b>"]
         if self.role:
             lines.append(self.role)
         lines.append("")
@@ -85,7 +85,7 @@ class EmailMessage(BaseModel):
     footer: str
 
     def create_message(self) -> str:
-        return f"{self.subject}\n\n{self.ansprache}\n\n{self.body}\n\n{self.footer}"
+        return f"{self.ansprache}\n\n{self.body}\n\n{self.footer}"
 
 
 
