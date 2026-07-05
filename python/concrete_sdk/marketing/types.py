@@ -55,13 +55,26 @@ class SenderConfig(BaseModel):
     role: str = ""
     company: str = ""
     signoff: str = ""
+    phone: str = ""
+    email: str = ""
+    website: str = ""
+    address: str = ""
 
     def render_footer(self) -> str:
         lines = [self.signoff, "", self.name]
         if self.role:
-            lines.append(f"{self.role}, {self.company}")
-        else:
-            lines.append(self.company)
+            lines.append(self.role)
+        lines.append("")
+        if self.phone:
+            lines.append(self.phone)
+        if self.email:
+            lines.append(f'<a href="mailto:{self.email}">{self.email}</a>')
+        lines.append("")
+        if self.website:
+            lines.append(f'<a href="https://{self.website}">{self.website}</a>')
+        company_line = " | ".join(part for part in (self.company, self.address) if part)
+        if company_line:
+            lines.append(company_line)
         return "\n".join(lines)
 
 
