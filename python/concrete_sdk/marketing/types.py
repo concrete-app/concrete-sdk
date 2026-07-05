@@ -19,6 +19,8 @@ class Company(BaseModel):
     referenzen: list[Referenz] = Field(default_factory=list)
     mitarbeiter: list[str] = Field(default_factory=list, description="List of employees associated with the Company")
     dienstleistung: str = Field(..., description="Description of the service provided by the Company")
+    positionierung: str = Field("", description="Market positioning, for grounding LLM prompts")
+    angebot: str = Field("", description="Core offer, for grounding LLM prompts")
 
     def get_company_info(self) -> str:
         """Full text description of the company, for grounding LLM prompts."""
@@ -29,10 +31,38 @@ class Company(BaseModel):
         mitarbeiter = ", ".join(self.mitarbeiter) or "(nicht angegeben)"
         return (
             f"Dienstleistung:\n{self.dienstleistung}\n\n"
+            f"Positionierung:\n{self.positionierung}\n\n"
+            f"Angebot:\n{self.angebot}\n\n"
             f"Team: {mitarbeiter}\n\n"
             f"Referenzen:\n{referenzen}"
         )
 
+
+class EmailDraft(BaseModel):
+    """The only fields the LLM is allowed to author. Deliberately excludes the
+    footer/signature - that is always assembled by SenderConfig.render_footer(),
+    never asked of the model. Pass this (not EmailMessage) to with_structured_output."""
+    subject: str
+    ansprache: str
+    body: str
+
+
+class SenderConfig(BaseModel):
+    """Fixed identity of the single human who signs every outreach email. Plain
+    data + one formatting method - deliberately kept out of with_structured_output
+    so the sign-off can never be paraphrased, reordered, or vary between runs."""
+    name: str
+    role: str = ""
+    company: str = ""
+    signoff: str = ""
+
+    def render_footer(self) -> str:
+        lines = [self.signoff, "", self.name]
+        if self.role:
+            lines.append(f"{self.role}, {self.company}")
+        else:
+            lines.append(self.company)
+        return "\n".join(lines)
 
 
 class EmailMessage(BaseModel):
@@ -56,7 +86,7 @@ class Lead:
         self.db: Client | None = db
         self.messages: list[EmailMessage] = []
         self.responded: bool = False
-        self.writing_attempts: int = 3
+        self.writing_attempts: int = 2
         self.next_writing_attempt: datetime | None = None
 
     @classmethod
@@ -85,7 +115,7 @@ class Lead:
         self.fit_reason = data["fit_reason"]
         self.messages = [EmailMessage(**m) for m in data.get("messages", [])]
         self.responded = data.get("responded", False)
-        self.writing_attempts = data.get("writing_attempts", 3)
+        self.writing_attempts = data.get("writing_attempts", 2)
         self.next_writing_attempt = data.get("next_writing_attempt")
 
     def read_lead_from_firebase(self) -> None:
