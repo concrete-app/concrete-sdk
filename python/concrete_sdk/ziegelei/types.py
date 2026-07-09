@@ -28,6 +28,7 @@ class Bestellung:
     baustelle_nr: str
     baustelle_plz: str
     telefon: str
+    email: str
     lieferdatum: date
     name: str
     franko_bau_oder_abgeholt: bool

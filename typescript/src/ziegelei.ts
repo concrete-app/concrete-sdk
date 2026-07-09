@@ -49,6 +49,7 @@ export interface Bestellung {
   baustelleNr: string;
   baustellePlz: string;
   telefon: string;
+  email: string;
   lieferdatum: Date;
   name: string;
   frankoBauOderAbgeholt: boolean;
