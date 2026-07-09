@@ -1,11 +1,37 @@
 from pydantic import BaseModel, Field
 from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 from google.cloud.firestore_v1.client import Client
 import json
+import random
 
 from google.cloud import secretmanager
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
+
+_LOCAL_TZ = ZoneInfo("Europe/Zurich")
+_BUSINESS_START_HOUR = 8
+_BUSINESS_END_HOUR = 18
+
+
+def next_business_hours(base: datetime | None = None) -> datetime:
+    """Nudge `base` (default: now) into Swiss business hours.
+
+    Cloud Functions run in UTC and Firestore triggers fire the instant a lead
+    doc is created, so without this a lead created at 2am gets its first
+    outreach email at 2am too — an obvious automation tell. Returns `base`
+    unchanged if it already falls inside the window.
+    """
+    now = (base or datetime.now(_LOCAL_TZ)).astimezone(_LOCAL_TZ)
+    if _BUSINESS_START_HOUR <= now.hour < _BUSINESS_END_HOUR:
+        return now
+    target_day = now if now.hour < _BUSINESS_START_HOUR else now + timedelta(days=1)
+    return target_day.replace(
+        hour=random.randint(_BUSINESS_START_HOUR, _BUSINESS_END_HOUR - 1),
+        minute=random.randint(0, 59),
+        second=random.randint(0, 59),
+        microsecond=0,
+    )
 
 
 class Referenz(BaseModel):
@@ -83,6 +109,7 @@ class EmailMessage(BaseModel):
     ansprache: str
     body: str
     footer: str
+    message_id: str | None = Field(None, description="RFC 5322 Message-ID this email was sent with, for threading later replies")
 
     def create_message(self) -> str:
         return f"{self.ansprache}\n\n{self.body}\n\n{self.footer}"
@@ -158,12 +185,19 @@ class Lead:
 
 
     def record_send(self, draft: EmailMessage, followup_days: int = 8) -> None:
-        """Record a sent outreach message and schedule (or clear) the next attempt."""
+        """Record a sent outreach message and schedule (or clear) the next attempt.
+
+        The follow-up day and time-of-day are jittered so a batch of leads sent
+        together doesn't all land at the exact same second N days later, which
+        reads as obviously automated.
+        """
         self.messages.append(draft)
         self.writing_attempts -= 1
-        self.next_writing_attempt = (
-            datetime.now() + timedelta(days=followup_days) if self.writing_attempts > 0 else None
-        )
+        if self.writing_attempts > 0:
+            jittered_day = datetime.now(_LOCAL_TZ) + timedelta(days=followup_days, hours=random.uniform(-24, 24))
+            self.next_writing_attempt = next_business_hours(jittered_day)
+        else:
+            self.next_writing_attempt = None
         self.update_lead_in_firebase(
             messages=[m.model_dump(mode="json") for m in self.messages],
             writing_attempts=self.writing_attempts,

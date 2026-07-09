@@ -26,6 +26,16 @@ class MarketingMailer:
             self._api_key = client.access_secret_version(request={"name": name}).payload.data.decode().strip()
         return self._api_key
 
-    def send(self, subject: str, html: str, to: str = TEST_MAILBOX, from_: str = TEST_MAILBOX) -> None:
+    def send(
+        self,
+        subject: str,
+        html: str,
+        to: str = TEST_MAILBOX,
+        from_: str = TEST_MAILBOX,
+        headers: dict[str, str] | None = None,
+    ) -> None:
         resend.api_key = self.api_key
-        resend.Emails.send({"from": from_, "to": to, "subject": subject, "html": html})
+        payload = {"from": from_, "to": to, "subject": subject, "html": html}
+        if headers:
+            payload["headers"] = headers
+        resend.Emails.send(payload)
