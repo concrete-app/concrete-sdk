@@ -6,26 +6,30 @@ from typing import Literal, Annotated
 class Backstein:
     bezeichnung: str
     zusatz_kuerzel: str
-    hoehe: int
-    breite: int
+    hoehe: float
+    breite: float
     nut_und_kamm: bool
     def generate_text(self) -> str:
         return f"{self.bezeichnung} {self.zusatz_kuerzel} ({self.hoehe}/{self.breite}){'N+K' if self.nut_und_kamm else ''}"
 
 @dataclass
 class Tonsturz:
-    breite: Annotated[int, "Breite des Tonsturzes in cm"]
-    hoehe: Annotated[int, "Höhe des Tonsturzes in cm"]
-    laenge: Annotated[int, "Länge des Tonsturzes in m"]
+    breite: Annotated[float, "Breite des Tonsturzes in cm"]
+    hoehe: Annotated[float, "Höhe des Tonsturzes in cm"]
+    laenge: Annotated[float, "Länge des Tonsturzes in m"]
     verfuegbar: Annotated[bool, "Gibt an, ob der Tonsturz verfügbar ist oder nicht"]
 
 
 @dataclass
 class Bestellung:
     firma: str
+    datum: date
     baustelle_strasse: str
+    baustelle_nr: str
     baustelle_plz: str
+    telefon: str
     lieferdatum: date
+    name: str
     franko_bau_oder_abgeholt: bool
     zufahrt: Literal[
         "Solo-Fahrzeug (3-Achser) ca. 17 Paletten",
@@ -38,4 +42,5 @@ class Bestellung:
         "Nachmittag"
     ]
     backsteine: list[Backstein]
+    tonstuerze: list[Tonsturz]
     notizen: str
