@@ -2,12 +2,7 @@ from pydantic import BaseModel, Field
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 from google.cloud.firestore_v1.client import Client
-import json
 import random
-
-from google.cloud import secretmanager
-from google.oauth2 import service_account
-from googleapiclient.discovery import build
 
 _LOCAL_TZ = ZoneInfo("Europe/Zurich")
 _BUSINESS_START_HOUR = 8
@@ -126,7 +121,7 @@ class Lead:
         self.db: Client | None = db
         self.messages: list[EmailMessage] = []
         self.responded: bool = False
-        self.writing_attempts: int = 2
+        self.writing_attempts: int = 1
         self.next_writing_attempt: datetime | None = None
 
     @classmethod
@@ -155,7 +150,7 @@ class Lead:
         self.fit_reason = data["fit_reason"]
         self.messages = [EmailMessage(**m) for m in data.get("messages", [])]
         self.responded = data.get("responded", False)
-        self.writing_attempts = data.get("writing_attempts", 2)
+        self.writing_attempts = data.get("writing_attempts", 1)
         self.next_writing_attempt = data.get("next_writing_attempt")
 
     def read_lead_from_firebase(self) -> None:
