@@ -67,7 +67,7 @@ GROBKATEGORIE_ALIASES: dict[str, list[str]] = {
     "Malerarbeiten": [
         "zwischenschliff", "innenbereich", "jetfinish", "vsh", "suncare", "weisslicher",
         "schweizerischer", "hobelwerke", "zertifikat", "verbandes", "stationsstrasse", "bern",
-        "geschliffen", "sichtfläche", "lack", "lieferant", "farbenfarbrik", "böhme", "liebefeld",
+        "geschliffen", "lack", "lieferant", "farbenfarbrik", "böhme", "liebefeld",
         "farbpigmentierung", "finish", "lasur", "lasureinstellungen", "baustelle", "jetmatt",
         "gespritzt", "schlussanstrich", "weissliche",
     ],
