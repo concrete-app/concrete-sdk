@@ -30,12 +30,22 @@ t.export_to_markdown(output_path=f"example.md")
 
 ```
 
-Werkvertrag parsen
+Werkvertrag parsen (mit Seiten-Tracking pro Position)
 
 ```python
+from concrete_sdk.werkvertrag.parser import WerkvertragParser, join_pages
 
-md_text = Path(f"../data/processed/werkvertrag/{file_name}.md").read_text(encoding="utf-8")
-parser = WerkvertragParser(md_text)
+tagged_text = join_pages(t.page_transcriptions)  # statt "\n".join(...) -- fuellt Position.pages
+parser = WerkvertragParser(tagged_text)
 vertrag = parser.parse()
 vertrag.to_json(f"../data/export/werkvertrag/{file_name}.json")
+```
+
+Grobkategorie klassifizieren (deterministisch, kein LLM)
+
+```python
+from concrete_sdk.werkvertrag.grobkategorie import classify_positions
+
+leaves = [p for p in vertrag.positionen if p.level == "leaf"]
+classify_positions(leaves)  # setzt position.grobkategorie in-place
 ```

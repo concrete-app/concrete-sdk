@@ -26,6 +26,7 @@ class PDFTranscriber:
     def __init__(self, pdf_path: str, llm: BaseChatModel):
         self.semaphore = asyncio.Semaphore(10)
         self.transcription = ""
+        self.page_transcriptions: list[str] = []
         self.pdf_path = pdf_path
         self.llm = llm
         self.pages = self.split_pdf_into_pages(self.pdf_path)
@@ -107,16 +108,20 @@ class PDFTranscriber:
 
     async def transcribe(self) -> str:
         """
-        Transcribes the text from a PDF file.
+        Transcribes the text from a PDF file, one page at a time. Keeps each page's own result
+        around in `self.page_transcriptions` (not just the joined `self.transcription`) so callers
+        that need per-position page tracking can build tagged input via
+        `concrete_sdk.werkvertrag.parser.join_pages(self.page_transcriptions)` instead of a plain
+        joined string.
         Returns:
-            str: The transcribed text from the PDF.
+            str: The transcribed text from the PDF (all pages joined).
         """
         async def _limited(page_bytes: bytes) -> str:
             async with self.semaphore:
                 return await self.transcribe_page(page_bytes)
 
-        results = await asyncio.gather(*[_limited(page) for page in self.pages])
-        self.transcription = "\n".join(results)
+        self.page_transcriptions = await asyncio.gather(*[_limited(page) for page in self.pages])
+        self.transcription = "\n".join(self.page_transcriptions)
         return self.transcription
 
     def export_to_markdown(self, output_path: str) -> None:

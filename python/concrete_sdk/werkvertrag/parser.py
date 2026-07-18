@@ -11,6 +11,11 @@ gracefully (None) rather than raising, except the internal consistency check on 
 
 One parser class per document section, each responsible for exactly one piece of the model --
 `WerkvertragParser` only composes them.
+
+`PositionParser`'s marker/quantity/footer-noise handling was validated against a hand-corrected
+ground truth in a companion project (100% extraction coverage, 100% Grobkategorie classification
+accuracy) and ported in from there -- see the inline comments below for what failure case each
+regex/branch guards against.
 """
 
 from __future__ import annotations
@@ -127,14 +132,28 @@ class Position:
     is_custom: bool = False            # trug die "R"-Markierung (weicht vom Standard-NPK ab) -- nicht jedes Template markiert das
     is_eventual: bool = False
     refers_to: list[str] = field(default_factory=list)
-    menge: float | None = None         # nur auf "leaf"-Ebene gesetzt
+    # "per" (z.B. "per LE") ist die NPK-Regie-Notation -- Verrechnung nach effektivem Aufwand ohne
+    # im LV festgelegte Menge. Der Text "per" IST hier die Menge, kein fehlender Wert, daher str
+    # als gleichberechtigte Alternative zu float statt None.
+    menge: float | str | None = None   # nur auf "leaf"-Ebene gesetzt
     einheit: str | None = None
     einzelpreis: float | None = None   # None in einem Angebot -- noch nicht ausgefuellt
     gesamtpreis: float | None = None
-    material: str | None = None        # spaeter vom LLM angereichert (siehe material.py), nicht vom Parser
+    # Alle Seiten, auf denen diese Positionsnummer im Dokument auftaucht -- meist genau eine, aber
+    # eine wiederholte Zeile derselben Nummer nach einem Seitenumbruch (siehe PositionParser)
+    # haengt ihre Seite an statt die erste zu ersetzen, da beide echte Fundstellen sind (z.B. eine
+    # ueber mehrere Seiten fortlaufende Preistabelle). pages[0] bleibt die zuerst gesehene Seite.
+    pages: list[int] = field(default_factory=list)
+    # Grobkategorie(n) dieser Position (siehe grobkategorie.py), vom Parser leer gelassen und von
+    # `grobkategorie.classify_positions` in-place gefuellt -- deterministisch, kein LLM.
+    grobkategorie: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
-        if self.menge is not None and self.einzelpreis is not None and self.gesamtpreis is not None:
+        if (
+            isinstance(self.menge, float)
+            and self.einzelpreis is not None
+            and self.gesamtpreis is not None
+        ):
             erwartet = self.menge * self.einzelpreis
             if abs(erwartet - abs(self.gesamtpreis)) > 0.5:
                 raise ValueError(
@@ -373,6 +392,14 @@ def _is_wrapped_continuation(line: str) -> bool:
 
 
 _FOOTER_LETTERHEAD = re.compile(r"CH[EF]-\d{3}\.\d{3}\.\d{3}\s*MWST")  # OCR sometimes confuses E/F
+# The page-bottom company logo (a graphic mark, occasionally transcribed with a "[Bildmarke]"
+# image-placeholder prefix) renders as its own standalone all-caps line at the very end of a page,
+# distinct from _FOOTER_LETTERHEAD's VAT-number letterhead line -- when a position's continuation
+# spans that exact page break, this line lands mid-text instead of being dropped. "MAKI[OD]L"
+# covers an observed O/D OCR confusion. Deliberately anchored to the ALL-CAPS logo rendering only --
+# the mixed-case "Makiol Wiederkehr AG" is also genuine running text elsewhere in the document (e.g.
+# naming the structural engineer), which must NOT be stripped.
+_FOOTER_LOGO = re.compile(r"^(?:\[Bildmarke\]\s*)?MAKI[OD]L WIEDERKEHR\s*$")
 _FOOTER_PROJEKT = re.compile(r"^Projekt:\s*\d+\s*$")
 _FOOTER_SEITE = re.compile(r"^Seite:\s*\d+\s*$")
 _FOOTER_BKP = re.compile(r"^BKP:\s*\d+\s*$")
@@ -387,7 +414,25 @@ _CATALOG_ID = re.compile(r"NPK-Bau:\s*(\d+)")
 # back up after normalize_markdown runs and namespace position numbers per catalog.
 _CATALOG_SENTINEL_PREFIX = "\x00CATALOG:"
 _CATALOG_SENTINEL_SUFFIX = "\x00"
+# Same trick, one level up: pages are joined into a single text before parsing (normalize_markdown
+# needs the full document to strip cross-page footer noise), so a page sentinel line marks each
+# page boundary going in, letting PositionParser recover "which page was this marker on" after
+# normalization runs -- normalize_markdown never touches these lines (see _is_wrapped_continuation:
+# a line starting with "\x00" never matches _LEADING_DIGITS, so it's always kept as-is).
+_PAGE_SENTINEL_PREFIX = "\x00PAGE:"
+_PAGE_SENTINEL_SUFFIX = "\x00"
 _BOLD_WRAPPED_LINE = re.compile(r"^\*\*(.+)\*\*$")
+
+
+def join_pages(page_texts: list[str]) -> str:
+    """Joins per-page markdown into one text, tagging each page's start with a sentinel line so
+    PositionParser can recover the source page number for every position after normalization.
+    Callers that don't need per-position page tracking can keep using `"\\n".join(page_texts)`."""
+    parts = []
+    for i, page_text in enumerate(page_texts, start=1):
+        parts.append(f"{_PAGE_SENTINEL_PREFIX}{i}{_PAGE_SENTINEL_SUFFIX}")
+        parts.append(page_text)
+    return "\n".join(parts)
 
 
 def _strip_footer_noise(text: str) -> str:
@@ -409,6 +454,8 @@ def _strip_footer_noise(text: str) -> str:
             skip_next = False
             continue
         if _FOOTER_LETTERHEAD.search(stripped):
+            continue
+        if _FOOTER_LOGO.match(stripped):
             continue
         if _FOOTER_PROJEKT.match(stripped):
             skip_next = True
@@ -445,23 +492,101 @@ def _unwrap_bold_headings(text: str) -> str:
     return "\n".join(unwrapped)
 
 
+_LEADING_NUMBER_TITLE = re.compile(r"^(\d{2,6})\s+(.+)$")
+
+
+def _strip_duplicate_cover_heading(text: str) -> str:
+    # The Ausschreibung/Werkvertrag cover section repeats its own Auftrags-/BKP-Titel twice in a
+    # row right after the "Ausschreibung und Angebot Nr." / "Werkvertrag Nr." line -- once with the
+    # full Auftragsnummer ("214000 Montagebau in Holz") and again directly below with just the
+    # leading 2-3 digits ("214 Montagebau in Holz"). The full-number line never matches
+    # MARKER_PATTERN's chapter alternative (it requires exactly 2-3 digits), but the truncated
+    # repeat is syntactically indistinguishable from a real bare chapter marker -- e.g. this exact
+    # "214 Montagebau in Holz" text is the one used as the bold-wrapped example in
+    # _unwrap_bold_headings above, so the same string apparently also shows up unwrapped. Left
+    # alone, it gets misread as the start of a brand-new (bogus) chapter "214", whose near-empty
+    # body then collides with the real chapter with that number later in the document, merging
+    # unrelated content and burying the genuine first chapter one slot deep. Since the truncated
+    # line's title is a byte-for-byte repeat of the title already on the line above, it carries no
+    # information and can simply be dropped.
+    lines = text.split("\n")
+    kept: list[str] = []
+    for line in lines:
+        if kept:
+            prev_match = _LEADING_NUMBER_TITLE.match(kept[-1].strip())
+            curr_match = _LEADING_NUMBER_TITLE.match(line.strip())
+            if prev_match and curr_match and prev_match.group(2) == curr_match.group(2):
+                continue
+        kept.append(line)
+    return "\n".join(kept)
+
+
+# "Pos" and "Position" both recur unabbreviated-without-a-period right before a wrapped
+# cross-reference number ("...Farbton gemäss Oberflächenbehandlung Pos\n277.226", "...sind in der
+# Position\n875.125 (Fachwerkknoten 1.6)..."), not just the dotted abbreviation "Pos." -- each is a
+# single, unambiguous occurrence across the corpus, so both are joined the same way rather than
+# only the dotted form.
+_POS_REFERENCE_END = re.compile(r"([Pp]os(?:ition)?\.?|&)$")
+_POS_REFERENCE_CONTINUATION = re.compile(r"^\d{2,4}\.\d{1,4}\b")
+
+# The NPK convention already handled elsewhere (repeat a leaf's own number directly above its
+# continuation quantity line after a page break, e.g. "412.114\n206 m2 ......") sometimes has the
+# same "99" page-layout noise digit MARKER_PATTERN's ascending-order filter already knows to reject
+# glued directly in front of it on the SAME line: "99 412.114 . gem. Plan A_01". Because
+# MARKER_PATTERN is anchored to the start of a line, "412.114" is never even attempted as a marker
+# there -- the whole line falls through as inert body text once "99" is discarded, silently losing
+# that position's own quantity. Stripped here, before MARKER_PATTERN ever sees it, rather than
+# widening the ascending-order filter -- this is purely a same-line noise-prefix case, distinct from
+# "99" standing alone as unrelated body text elsewhere, which must NOT be touched. The same glued-
+# "99" noise also lands in front of a BARE sub-marker (".116", ".414" -- dot glued to digits, no
+# chapter prefix) -- the digit-only alternative above never fires here since there's no
+# "chapter." prefix, so this needs its own lookahead. A bulleted body line starting "99 . <word>"
+# (dot, SPACE, then text) has the same "99 ." shape but is real body content, not noise -- excluded
+# by requiring a digit (not whitespace) directly after the dot.
+_STRAY_NOISE_BEFORE_MARKER_RE = re.compile(r"^99 (?=(?:\d{2,4}\.\d{1,4}|\.\d{1,4})\b)", re.MULTILINE)
+
+
+def _is_pos_reference_continuation(prev_line: str, line: str) -> bool:
+    # "...Behandlung gemäss Pos.\n046.210" -- a cross-reference to another position elsewhere in
+    # the catalog, wrapped onto its own line right after the abbreviation "Pos." (Position). This
+    # is exactly the general "wrap lands after the digits AND a space" residual case
+    # _is_wrapped_continuation's docstring already calls out as unrecognizable by shape alone
+    # (the wrapped value "046.210" is itself indistinguishable from a real marker) -- but "Pos."
+    # immediately before it is an unambiguous, recurring signal in this document, so it's special-
+    # cased here rather than left as a residual, unlike the generic case.
+    #
+    # Same story for a trailing "&": "zu Pos. 821.181 & 822.183 &\n822.184 (Unterzüge)" wraps a
+    # multi-position cross-reference list right after one of its "&" separators, not right after
+    # "Pos.". Left unjoined, "822.184" reads as a real continuation marker at the start of its own
+    # line -- worse than just stranding a bogus leaf, since MARKER_PATTERN's continuation branch
+    # also switches `_current_chapter` unconditionally, silently hijacking every position parsed
+    # afterwards until the next explicit full marker forces it back. A list can wrap more than once
+    # ("A & B &\nC & D &\nE"), so this fires per adjacent line pair like the "Pos." case.
+    return bool(_POS_REFERENCE_END.search(prev_line.rstrip())) and bool(_POS_REFERENCE_CONTINUATION.match(line))
+
+
 def normalize_markdown(text: str) -> str:
-    """Strips recurring page-footer boilerplate, unwraps bold-only heading lines, then rejoins
-    wrapped-value lines that would otherwise be misread as bogus chapter markers.
+    """Strips recurring page-footer boilerplate and the cover-page's duplicated Auftrags-/BKP-
+    Titel line, unwraps bold-only heading lines, then rejoins wrapped-value lines that would
+    otherwise be misread as bogus chapter markers.
 
     Scoped narrowly to those failure modes -- it does not attempt general PDF-text de-wrapping
     (e.g. a label like "Architekt:" with its value on the next line is left untouched, since
     MetaParser/BeteiligteParser rely on that line break). Known residual cases this doesn't catch:
     a wrap that lands after the digits *and* a space (e.g. "...Art.\\n22 + 23 ...", where "Art."
     is an abbreviation, not a real sentence end) is indistinguishable from a genuine chapter
-    header by shape alone; and the repeated project-site-address footer line (see
-    `_strip_footer_noise`) isn't identifiable without the document's own parsed address.
+    header by shape alone -- "Pos."/"Position"/"&" are special-cased above since they recur
+    constantly in this document, but other abbreviations aren't; and the repeated project-site-
+    address footer line (see `_strip_footer_noise`) isn't identifiable without the document's own
+    parsed address.
     """
     text = _strip_footer_noise(text)
+    text = _STRAY_NOISE_BEFORE_MARKER_RE.sub("", text)
+    text = _strip_duplicate_cover_heading(text)
     text = _unwrap_bold_headings(text)
     normalized: list[str] = []
     for line in text.split("\n"):
-        if normalized and _is_wrapped_continuation(line):
+        if normalized and (_is_wrapped_continuation(line) or _is_pos_reference_continuation(normalized[-1], line)):
             normalized[-1] = f"{normalized[-1]} {line}".rstrip()
         else:
             normalized.append(line)
@@ -494,25 +619,54 @@ class PositionParser:
     # Gruppe waere hier nicht zuverlaessig, da die Regex-Engine sonst auf weniger Ziffern in der
     # zweiten Gruppe backtrackt und die Ausschlussregel umgeht.
     MARKER_PATTERN = re.compile(
+        # Bare sub-marker: "." directly glued to its digits (".200", ".221", no space) -- a bulleted
+        # list item that happens to start with a number is written as ". " (dot, SPACE, then text/
+        # number) and occurs throughout position bodies. Requiring zero whitespace after the dot is
+        # exactly what separates the two.
         r"^(?!\d{1,2}\.\d{1,2}\.\d{1,4}\b)(?P<r>R\s*)?"
-        r"(?:(?P<continuation>\d{2,4}\.\d{1,4})"
-        r"|\.\s*(?P<sub>\d{1,4})\b"
-        r"|(?P<chapter>\d{2,3})(?![.\d])(?!\s*[A-Za-zÄÖÜäöü]{1,3}\d{0,1}\s+[\d'.]))",
+        # Both digit groups below are wrapped in atomic groups `(?>...)` -- without that, the engine
+        # can backtrack to a SHORTER digit run the moment a later exclusion rejects the full-length
+        # match, silently re-matching a truncated marker instead of correctly falling through to
+        # plain body text.
+        r"(?:(?P<continuation>(?>\d{2,4})\.(?>\d{1,4}))"
+        r"(?!\s*[A-Za-zÄÖÜäöü]{1,3}\d{0,1}\s+[\d'.])"
+        r"|\.(?P<sub>\d{1,4})\b"
+        r"|(?P<chapter>\d{2,3})(?![.\d])(?!\s*[A-Za-zÄÖÜäöü]{1,3}\d{0,1}\s+[\d'.])"
+        # A dimension value hard-wrapped onto its own line ("...Abstand mm <\n650 mm\n...") looks
+        # exactly like a bare chapter marker by the exclusion above, since nothing there requires a
+        # NUMBER after the unit -- only the "unit + number" quantity-line shape is excluded. A real
+        # NPK chapter title is always a full descriptive word, never a bare 1-3 letter unit
+        # abbreviation on its own -- so a chapter-shaped number immediately followed by one of these
+        # unit abbreviations AND then end-of-line/comma/period is excluded too.
+        r"(?!\s*(?:mm|cm|dm|m2|m3|kg|kN|gl|pl|St|Stk|LE|h|t|m|l)\b(?:[,.]|\s*$)))",
         re.MULTILINE,
     )
     GANTT_NOISE_PATTERN = re.compile(
         r"(Mon|Die|Mi|Don|Fre)\.?\s+\d{1,2}\.\d{1,2}\.\d{2,4}.*(Mon|Die|Mi|Don|Fre)\.?\s+\d{1,2}\.\d{1,2}\.\d{2,4}"
     )
     QUANTITY_PATTERN = re.compile(
-        r"(?P<qty>\d{1,3}(?:'\d{3})*(?:\.\d+)?)\s+"
-        r"(?P<unit>[A-Za-zÄÖÜäöü]{1,3}\d?)\s+"
-        r"(?:(?P<price>\d{1,3}(?:'\d{3})*\.\d{2})\s*"
+        # "per" (z.B. "per LE ......") ersetzt bei Regie-/Zeitlohnarbeiten die Zahl -- Verrechnung
+        # nach effektivem Aufwand, keine im LV festgelegte Menge. \b auf beiden Seiten verhindert
+        # einen Fehltreffer mitten in einem laengeren Wort (z.B. "Kupfer", "Temperatur").
+        r"(?P<qty>\bper\b|\d{1,3}(?:'\d{3})*(?:\.\d+)?)\s+"
+        r"(?P<unit>[A-Za-zÄÖÜäöü]{1,3}\d?)"
+        # The end-of-body branch is checked BEFORE the mandatory `\s+` below, not after: "<qty>
+        # <unit>" with nothing at all trailing (a handful of leaves lose their Angebot placeholder
+        # dots entirely to the transcription step, even though the source PDF does print them) has
+        # no whitespace left to consume, so requiring `\s+` first would reject it outright. `\Z`
+        # (not `$`/MULTILINE) only ever matches the LAST "qty unit" run in an already-stripped body,
+        # so an earlier dimension mention can't false-positive since more text follows it.
+        r"(?:(?=\s*\Z)"
+        r"|\s+(?:(?P<price>\d{1,3}(?:'\d{3})*\.\d{2})\s*"
         r"(?P<open>\()?\s*(?P<total>\d{1,3}(?:'\d{3})*\.\d{2})\s*(?P<close>\))?"
-        r"|(?P<placeholder>\.{4,}[ \t]*\.{4,}))"
+        r"|(?P<placeholder>\.{4,}[ \t]*\.{4,})))"
     )
     REFERENCE_PATTERN = re.compile(r"Pos\.?\s*(\d{2,4})\.(\d{1,4})(?:\s*-\s*(\d{1,4}))?")
     CATALOG_PATTERN = re.compile(
         re.escape(_CATALOG_SENTINEL_PREFIX) + r"(?P<id>\d+)" + re.escape(_CATALOG_SENTINEL_SUFFIX)
+    )
+    PAGE_PATTERN = re.compile(
+        re.escape(_PAGE_SENTINEL_PREFIX) + r"(?P<num>\d+)" + re.escape(_PAGE_SENTINEL_SUFFIX)
     )
 
     def parse(self, text: str) -> list[Position]:
@@ -520,7 +674,10 @@ class PositionParser:
         self._order: list[str] = []
         self._current_chapter: str | None = None
         self._max_group_suffix: int | None = None  # hoechster ".x00"-Suffix im aktuellen Kapitel
+        self._current_group_text: str | None = None       # Text der offenen ".x00"-Gruppe
+        self._current_subgroup_text: str | None = None    # Text der offenen ".xy0"-Untergruppe
         self._current_catalog: str | None = None
+        self._current_page: int | None = None
 
         text = normalize_markdown(text)
 
@@ -529,15 +686,65 @@ class PositionParser:
         # position numbers get namespaced by catalog id, see _qualify().
         catalog_events = list(self.CATALOG_PATTERN.finditer(text))
         self._multi_catalog = len({event.group("id") for event in catalog_events}) > 1
+        page_events = list(self.PAGE_PATTERN.finditer(text))
 
-        events = sorted(catalog_events + list(self.MARKER_PATTERN.finditer(text)), key=lambda m: m.start())
-        for index, event in enumerate(events):
+        events = sorted(
+            catalog_events + page_events + list(self.MARKER_PATTERN.finditer(text)),
+            key=lambda m: m.start(),
+        )
+
+        # A bare chapter marker (2-3 digits, no explicit "." continuation) can still collide with
+        # plain body noise the marker-shape exclusions above don't catch -- a stray value bleeding
+        # in from the page layout ("99 Es ist ein Kran vorgesehen...", recurring with unrelated text
+        # each time is clearly not a real chapter), a standalone dimension without a trailing digit,
+        # or a price-summary total row. None of these signals are reliably excludable by shape
+        # alone, but every REAL chapter number observed only ever increases -- so a bare chapter
+        # match whose number is smaller than the highest one already seen in the current catalog is
+        # rejected outright (filtered out before body text is sliced, so its surrounding text merges
+        # into whichever position is actually open, instead of starting a bogus new one).
+        filtered_events: list[re.Match] = []
+        rejected_spans: list[tuple[int, int]] = []
+        max_chapter_seen: int | None = None
+        seen_catalog_id: str | None = None
+        for event in events:
+            if event.re is self.CATALOG_PATTERN:
+                # The catalog sentinel line is re-emitted in the footer noise on EVERY page, not
+                # just at the actual catalog change -- the watermark must only reset when the
+                # catalog id genuinely CHANGES, or it would reset on every new page and wrongly
+                # re-accept noise like "99" as a valid new chapter.
+                if event.group("id") != seen_catalog_id:
+                    seen_catalog_id = event.group("id")
+                    max_chapter_seen = None
+                filtered_events.append(event)
+                continue
+            if event.re is self.PAGE_PATTERN:
+                filtered_events.append(event)
+                continue
+            if event.group("chapter"):
+                value = int(event.group("chapter"))
+                if max_chapter_seen is not None and value < max_chapter_seen:
+                    # Not just rejected as a boundary, but the digits themselves are removed from
+                    # the text -- otherwise e.g. "99" would remain as a meaningless number stranded
+                    # in the middle of whichever position's body it falls into.
+                    rejected_spans.append((event.start(), event.end()))
+                    continue
+                max_chapter_seen = max(max_chapter_seen or 0, value)
+            filtered_events.append(event)
+
+        for index, event in enumerate(filtered_events):
             if event.re is self.CATALOG_PATTERN:
                 self._current_catalog = event.group("id")
                 continue
+            if event.re is self.PAGE_PATTERN:
+                self._current_page = int(event.group("num"))
+                continue
             start = event.end()
-            end = events[index + 1].start() if index + 1 < len(events) else len(text)
-            body = text[start:end].strip()
+            end = filtered_events[index + 1].start() if index + 1 < len(filtered_events) else len(text)
+            raw = text[start:end]
+            for span_start, span_end in reversed(rejected_spans):
+                if start <= span_start < end:
+                    raw = raw[: span_start - start] + raw[span_end - start :]
+            body = raw.strip()
             self._process_marker(event, body)
 
         return [self._positions[number] for number in self._order]
@@ -557,20 +764,40 @@ class PositionParser:
             return
 
         if number in self._positions:
-            # Fortsetzung nach Seitenumbruch -- Text anhaengen statt doppelten Knoten zu erzeugen
-            self._positions[number].text += "\n\n" + body
+            # Fortsetzung nach Seitenumbruch -- Text anhaengen statt doppelten Knoten zu erzeugen.
+            # Bei einem Leaf kann die Mengen-/Einheitszeile dabei erst im nachgereichten Teil
+            # auftauchen (die NPK-Konvention wiederholt nach dem Seitenumbruch nur die eigene
+            # Sub-Nummer direkt ueber der Mengenzeile) -- ohne erneuten Extract-Aufruf wuerde diese
+            # Menge stillschweigend verloren gehen, weil nur der ERSTE body-Teil je auf eine
+            # Mengenzeile untersucht wird.
+            existing = self._positions[number]
+            if level == "leaf" and existing.menge is None:
+                body_text, menge, einheit, einzelpreis, gesamtpreis = self._extract_leaf_fields(body)
+                existing.menge = menge
+                existing.einheit = einheit
+                existing.einzelpreis = einzelpreis
+                existing.gesamtpreis = gesamtpreis
+            else:
+                body_text = self._clean_bezeichnung(body)
+            existing.text = f"{existing.text}\n\n{body_text}".strip()
+            if self._current_page is not None and self._current_page not in existing.pages:
+                existing.pages.append(self._current_page)
+            self._remember_group_context(level, existing.text)
             return
 
         is_eventual = "eventual" in body.lower()
-        menge = einheit = einzelpreis = gesamtpreis = None
         if level == "leaf":
-            menge, einheit, einzelpreis, gesamtpreis = self._extract_quantity(body)
+            body_text, menge, einheit, einzelpreis, gesamtpreis = self._extract_leaf_fields(body)
+            text = self._with_inherited_context(body_text)
+        else:
+            text = self._clean_bezeichnung(body)
+            menge = einheit = einzelpreis = gesamtpreis = None
 
         self._positions[number] = Position(
             number=number,
             level=level,
             title=title,
-            text=body,
+            text=text,
             parent_number=parent_number,
             is_custom=bool(marker.group("r")),
             is_eventual=is_eventual,
@@ -579,8 +806,29 @@ class PositionParser:
             einheit=einheit,
             einzelpreis=einzelpreis,
             gesamtpreis=gesamtpreis,
+            pages=[self._current_page] if self._current_page is not None else [],
         )
         self._order.append(number)
+        self._remember_group_context(level, text)
+
+    def _with_inherited_context(self, text: str) -> str:
+        # NPK convention: a ".x00" group and/or ".xy0" subgroup header states the shared material
+        # once ("Leimholz, Duo- oder Triobalken. Fichte/Tanne. Festigkeitsklasse C24. ...") for
+        # every leaf underneath it, and each leaf's own body only adds its specific dimension
+        # ("Querschnitt mm 60x160."). Without prepending that inherited text, a leaf's text often
+        # names no material at all -- the material lives exclusively in the sibling group/subgroup
+        # Position (unpriced, menge=None, otherwise never looked at downstream).
+        inherited = [t for t in (self._current_group_text, self._current_subgroup_text) if t]
+        if not inherited:
+            return text
+        return "\n\n".join([*inherited, text]).strip()
+
+    def _remember_group_context(self, level: str, text: str) -> None:
+        if level == "group":
+            self._current_group_text = text
+            self._current_subgroup_text = None  # neue Gruppe verwirft die Untergruppe der vorherigen
+        elif level == "subgroup":
+            self._current_subgroup_text = text
 
     def _resolve_number_and_level(self, marker: re.Match) -> tuple[str | None, str, str | None]:
         if marker.group("chapter"):
@@ -623,6 +871,8 @@ class PositionParser:
     def _set_chapter(self, chapter: str) -> None:
         self._current_chapter = chapter
         self._max_group_suffix = None
+        self._current_group_text = None
+        self._current_subgroup_text = None
 
     def _next_chapter_guess(self) -> str:
         # Bestmoegliche Annahme, wenn ein Kapitel-Header fehlt: das naechste Kapitel im NPK ist so
@@ -677,23 +927,36 @@ class PositionParser:
             return False  # Titel ohne echtes Wort (z.B. "%", "m3", ").") -- Fehltreffer aus einer Mengen-/Zahlenzeile
         return True
 
-    def _extract_quantity(self, text: str) -> tuple[float | None, str | None, float | None, float | None]:
+    def _extract_leaf_fields(self, body: str) -> tuple[str, float | str | None, str | None, float | None, float | None]:
         # Bei mehreren Treffern im Textblock (z.B. Mengenangabe in einer Erklaerung, dann die
         # echte Mengenzeile am Ende der Position) ist der LETZTE Treffer zuverlaessig die echte
-        # Mengenzeile.
-        for match in reversed(list(self.QUANTITY_PATTERN.finditer(text))):
-            qty = parse_swiss_number(match.group("qty"))
+        # Mengenzeile. Die gematchte Mengen-/Preiszeile wird aus dem Text entfernt, da menge/
+        # einheit/einzelpreis/gesamtpreis bereits separat gespeichert werden.
+        for match in reversed(list(self.QUANTITY_PATTERN.finditer(body))):
+            qty_raw = match.group("qty")
+            # "per" ist selbst die Menge (Regiearbeit, siehe QUANTITY_PATTERN), kein Zahlentext --
+            # parse_swiss_number wuerde dafuer ohnehin None liefern (kein \d im String).
+            qty = qty_raw if qty_raw == "per" else parse_swiss_number(qty_raw)
             unit = match.group("unit")
-            if match.group("placeholder"):
-                return qty, unit, None, None  # Angebot: Menge/Einheit aus der LV-Vorlage, Preis noch nicht ausgefuellt
+            if match.group("placeholder") or (match.group("price") is None and match.end() == len(body)):
+                # Platzhalter-Punkte vorhanden, ODER (QUANTITY_PATTERNs Alternative) die
+                # Transkription hat sie komplett verschluckt -- der Body endet direkt nach "<qty>
+                # <unit>". In beiden Faellen gibt es keinen Preis zu pruefen, also Menge/Einheit so
+                # uebernehmen.
+                text = self._clean_bezeichnung(body[: match.start()] + body[match.end():])
+                return text or body.strip(), qty, unit, None, None  # Angebot: Menge/Einheit aus der LV-Vorlage, Preis noch nicht ausgefuellt
+
+            if qty_raw == "per":
+                continue  # "per" kommt in diesem Dokument nie mit Preis/Total vor, nur mit Platzhalter
 
             price = parse_swiss_number(match.group("price"))
             total = parse_swiss_number(match.group("total"))
             if match.group("open") or match.group("close"):
                 total = -total  # Minderpreis steht in Klammern im Original
             if qty is not None and price is not None and total is not None and abs(qty * price - abs(total)) < 0.5:
-                return qty, unit, price, total
-        return None, None, None, None
+                text = self._clean_bezeichnung(body[: match.start()] + body[match.end():])
+                return text or body.strip(), qty, unit, price, total
+        return self._clean_bezeichnung(body) or body.strip(), None, None, None, None
 
     def _extract_references(self, text: str) -> list[str]:
         refs: list[str] = []
@@ -704,6 +967,49 @@ class PositionParser:
                 refs.append(f"{chapter}.{end}")
         return refs
 
+    # A Minderpreis's second (total) placeholder is parenthesized in the original ("Minderpreis
+    # steht in Klammern") -- when its matching first dot-run placeholder is on a separate line from
+    # it (rather than the same-line "...... (......)" shape QUANTITY_PATTERN's own placeholder
+    # alternative already consumes), this second one survives as unconsumed noise and needs its own
+    # optional-parens allowance here, or it lingers as a bare "(......................)" line --
+    # content-free, but not literally "just dots" -- at the very end of the leaf's own body. Left in
+    # place, that residual line becomes, after the surrounding blank-line collapse, a SPURIOUS extra
+    # "\n\n"-separated segment that would corrupt the leaf's own text.
+    _PLACEHOLDER_LINE = re.compile(r"^\(?\.{4,}\)?\s*$")
+    _RULE_LINE = re.compile(r"^-{3,}\s*$")
+    _CARRYOVER_LINE = re.compile(r"^Übertrag[.\s_]*$")
+
+    @classmethod
+    def _clean_bezeichnung(cls, text: str) -> str:
+        # An Angebot's unpriced Leistungsverzeichnis leaves a "......................"-only line
+        # wherever a price/total cell was left blank -- not just trailing (QUANTITY_PATTERN only
+        # ever strips the ONE dot-run tied to the position's own final quantity match), but anywhere
+        # in the body: a merged/garbled position can carry several such placeholder lines from other
+        # sub-items, and even a normal leaf's Angebot placeholder is two separate dot-run lines, of
+        # which the placeholder alternative in QUANTITY_PATTERN only ever consumes the first,
+        # stranding the second. Stripped unconditionally here instead of trying to widen that regex,
+        # since a placeholder-only line never carries information regardless of where it ends up.
+        #
+        # The transcription step also renders a printed horizontal rule (a title underline, or a
+        # blank fill-in line under a handwritten-entry heading) as a lone "---...---" line -- pure
+        # layout, never data, so it's dropped the same way. Three dashes is markdown's own minimum
+        # `---` rule width, and no real position text in these documents uses a bare dash run as
+        # content.
+        #
+        # Every page also ends with an "Übertrag" ("carried forward") running-total row -- a
+        # standalone label, alone or trailed by a blank-amount dot-run (with an occasional stray
+        # OCR "_"), never mixed with real position text on the same line -- so it's dropped the
+        # same way rather than winding up mid-position whenever the position happens to span the
+        # page break right at that row.
+        lines = [
+            line
+            for line in text.split("\n")
+            if not cls._PLACEHOLDER_LINE.match(line.strip())
+            and not cls._RULE_LINE.match(line.strip())
+            and not cls._CARRYOVER_LINE.match(line.strip())
+        ]
+        return re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+
 
 # ---------------------------------------------------------------------------
 # WerkvertragParser
@@ -711,7 +1017,12 @@ class PositionParser:
 
 
 class WerkvertragParser:
-    """Composes the section parsers above into a single `Werkvertrag`."""
+    """Composes the section parsers above into a single `Werkvertrag`.
+
+    Pass `text` built via `join_pages(page_texts)` (instead of a plain joined string) to get
+    per-position page tracking (`Position.pages`) -- a plain string with no page sentinels still
+    parses fine, just with `pages == []` on every position.
+    """
 
     HEADER_WINDOW = 3000
 
