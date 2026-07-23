@@ -21,6 +21,17 @@ class Tonsturz:
 
 
 @dataclass
+class BestellPosition:
+    """Eine einzelne Bestellzeile, unabhängig von der Produktkategorie (Backstein, Tonsturz,
+    Murfor, Thermur plus, ...) -- ersetzt die früheren getrennten `backsteine`/`tonstuerze`-Listen,
+    die kein Mengenfeld hatten."""
+    kategorie: str
+    produkt_text: str
+    anzahl: int
+    einheit: str
+
+
+@dataclass
 class Bestellung:
     firma: str
     datum: date
@@ -42,6 +53,5 @@ class Bestellung:
         "09:00 - 12:00",
         "Nachmittag"
     ]
-    backsteine: list[Backstein]
-    tonstuerze: list[Tonsturz]
+    positionen: list[BestellPosition]
     notizen: str

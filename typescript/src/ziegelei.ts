@@ -42,6 +42,16 @@ export type Zufahrt =
 
 export type LieferRichtzeit = "07:00" | "09:00 - 12:00" | "Nachmittag";
 
+/** Eine einzelne Bestellzeile, unabhängig von der Produktkategorie (Backstein, Tonsturz,
+ * Murfor, Thermur plus, ...) -- ersetzt die früheren getrennten `backsteine`/`tonstuerze`-Arrays,
+ * die kein Mengenfeld hatten und pro Kategorie eigene Handhabung im Aufrufer erzwangen. */
+export interface BestellPosition {
+  kategorie: string;
+  produktText: string;
+  anzahl: number;
+  einheit: string;
+}
+
 export interface Bestellung {
   firma: string;
   datum: Date;
@@ -55,7 +65,6 @@ export interface Bestellung {
   frankoBauOderAbgeholt: boolean;
   zufahrt: Zufahrt;
   lieferRichtzeiten: LieferRichtzeit;
-  backsteine: Backstein[];
-  tonstuerze: Tonsturz[];
+  positionen: BestellPosition[];
   notizen: string;
 }
