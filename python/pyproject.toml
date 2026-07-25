@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "concrete-sdk"
-version = "0.2.0"
+version = "0.3.0"
 description = "Concrete shared Python library"
 requires-python = ">=3.11"
 dependencies = [
@@ -13,10 +13,14 @@ dependencies = [
     "pdfplumber>=0.11.0",
     "google-cloud-firestore>=2.0",
     "google-cloud-secret-manager",
+    "google-cloud-storage",
     "google-api-python-client",
     "google-auth",
     "resend",
 ]
+
+[project.optional-dependencies]
+knowledgebase = ["crawl4ai>=0.9.1", "httpx"]
 
 [dependency-groups]
 dev = ["pytest>=8.0"]
