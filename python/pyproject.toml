@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "concrete-sdk"
-version = "0.3.0"
+version = "0.4.0"
 description = "Concrete shared Python library"
 requires-python = ">=3.11"
 dependencies = [
@@ -21,6 +21,9 @@ dependencies = [
 
 [project.optional-dependencies]
 knowledgebase = ["crawl4ai>=0.9.1", "httpx"]
+# concrete_sdk.firebase — firebase_admin and PyJWT are imported lazily, so this
+# extra is only needed by consumers that verify tokens / init the Admin SDK.
+firebase = ["firebase-admin>=6.0", "PyJWT>=2.8.0"]
 
 [dependency-groups]
 dev = ["pytest>=8.0"]
